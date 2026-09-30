@@ -25,6 +25,7 @@ export interface CreateTicketInput {
   totalTimeMinutes?: number | null;
   isArchived?: boolean;
   parentId?: string | null;
+  solutionText?: string;
 }
 
 /**
@@ -184,7 +185,7 @@ export async function createTicket(
   if (sendEmail && requester.email) {
     if (status === "RESOLVIDO") {
       // Se foi criado já como resolvido (comum em chamados manuais retroativos)
-      const solutionText = input.observations || "Chamado finalizado pela equipe de suporte.";
+      const solutionText = input.solutionText || input.observations || "Chamado finalizado pela equipe de suporte.";
       sendTicketResolvedEmail(ticket, requester.email, requester.name, solutionText).catch((err) => {
         console.error("[EMAIL] Erro inesperado ao tentar notificar conclusão imediata do chamado:", err);
       });
