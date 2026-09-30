@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { EnvelopeSimple, CheckCircle, WarningCircle, CaretDown, CaretUp, Code, PenNib, PaperPlaneRight, X, Trash, Broom, PencilSimple } from "@phosphor-icons/react";
 import EmailTemplatesManager from "./EmailTemplatesManager";
 import SignatureSettingsModal from "./SignatureSettingsModal";
+import SentEmailsManager from "./SentEmailsManager";
 
 interface ProcessedEmail {
   id: string;
@@ -26,7 +27,7 @@ interface EmailsManagementClientProps {
 
 export default function EmailsManagementClient({ initialEmails }: EmailsManagementClientProps) {
   const [emails, setEmails] = useState<ProcessedEmail[]>(initialEmails);
-  const [activeTab, setActiveTab] = useState<"history" | "templates">("history");
+  const [activeTab, setActiveTab] = useState<"history" | "sent" | "templates">("history");
   const [expandedEmailId, setExpandedEmailId] = useState<string | null>(null);
   
   // Reply State
@@ -211,6 +212,19 @@ export default function EmailsManagementClient({ initialEmails }: EmailsManageme
         >
           Histórico IMAP
           {activeTab === "history" && (
+            <div className="absolute bottom-0 left-0 w-full h-0.5 bg-[#4f78f5] rounded-t-full" />
+          )}
+        </button>
+        <button
+          onClick={() => setActiveTab("sent")}
+          className={`pb-3 text-sm font-semibold transition-colors relative ${
+            activeTab === "sent" 
+              ? "text-[#4f78f5]" 
+              : "text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          Enviados
+          {activeTab === "sent" && (
             <div className="absolute bottom-0 left-0 w-full h-0.5 bg-[#4f78f5] rounded-t-full" />
           )}
         </button>
@@ -561,6 +575,7 @@ export default function EmailsManagementClient({ initialEmails }: EmailsManageme
         </div>
       )}
 
+      {activeTab === "sent" && <SentEmailsManager />}
       {activeTab === "templates" && <EmailTemplatesManager />}
       
       {showSignatureSettings && (

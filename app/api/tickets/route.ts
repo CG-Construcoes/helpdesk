@@ -96,6 +96,7 @@ export async function POST(request: NextRequest) {
       startTime,
       endTime,
       observations,
+      sendEmail,
       parentId,
     } = body;
 
@@ -128,7 +129,8 @@ export async function POST(request: NextRequest) {
       },
       session.id,
       session.name,
-      ipAddress
+      ipAddress,
+      sendEmail !== undefined ? sendEmail : true
     );
 
     return NextResponse.json(ticket, { status: 201 });

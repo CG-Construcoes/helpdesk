@@ -195,7 +195,8 @@ export async function sendHtmlEmail(
   html: string, 
   inReplyToMessageId?: string, 
   cc?: string[],
-  existingAttachments?: any[]
+  existingAttachments?: any[],
+  metadata?: { ticketId?: string, reason: string }
 ) {
   const fromEmail = process.env.SENDGRID_FROM_EMAIL || 'suporte@empresa.com.br';
   const fromName = process.env.SENDGRID_FROM_NAME || 'HelpDesk';
@@ -233,6 +234,20 @@ export async function sendHtmlEmail(
   try {
     await sgMail.send(msg);
     console.log(`[EMAIL] E-mail enviado com sucesso para ${to}`);
+    
+    // Log to SentEmail
+    if (metadata) {
+      await prisma.sentEmail.create({
+        data: {
+          to,
+          subject,
+          bodyHtml: emailHtml,
+          ticketId: metadata.ticketId,
+          reason: metadata.reason,
+        }
+      }).catch(e => console.error("[EMAIL] Erro ao salvar log de e-mail enviado:", e));
+    }
+
     return { success: true, bodyHtml: emailHtml };
   } catch (error: any) {
     console.error(`[EMAIL] Falha ao enviar e-mail para ${to}:`, error.response?.body || error.message);
@@ -299,7 +314,7 @@ export async function sendCustomEmail(
   // Como o content já vem como HTML (do editor frontend ou templates),
   // não substituímos os \n por <br /> para não quebrar tabelas e layouts como a assinatura.
   const html = getEmailLayout(settings, "", content);
-  return sendHtmlEmail(to, subject, html, inReplyToMessageId, cleanCc, attachments);
+  return sendHtmlEmail(to, subject, html, inReplyToMessageId, cleanCc, attachments, { reason: "RESPOSTA_MANUAL", ticketId: undefined }); // we don't have ticketId easily here unless passed, let's update signature later if needed.
 }
 
 /**
@@ -408,7 +423,7 @@ export async function sendTicketCreatedEmail(ticketData: any, requesterEmail: st
   
   const { ccList, inReplyTo } = await getTicketEmailMetadata(ticketData.id, requesterEmail);
   
-  return sendHtmlEmail(requesterEmail, subject, html, inReplyTo, ccList);
+  return sendHtmlEmail(requesterEmail, subject, html, inReplyTo, ccList, undefined, { ticketId: ticketData.id, reason: "ABERTURA" });
 }
 
 /**
@@ -518,7 +533,7 @@ export async function sendTicketResolvedEmail(ticketData: any, requesterEmail: s
   
   const { ccList, inReplyTo } = await getTicketEmailMetadata(ticketData.id, requesterEmail);
 
-  return sendHtmlEmail(requesterEmail, subject, html, inReplyTo, ccList);
+  return sendHtmlEmail(requesterEmail, subject, html, inReplyTo, ccList, undefined, { ticketId: ticketData.id, reason: "FECHAMENTO" });
 }
 /**
  * Sends a recess auto-reply when the system is in recess mode.
@@ -563,6 +578,17 @@ export async function sendRecessEmail(ticket: any, toEmail: string, returnDate?:
     };
 
     await sgMail.send(msg);
+    
+    await prisma.sentEmail.create({
+      data: {
+        to: toEmail,
+        subject: msg.subject,
+        bodyHtml: html,
+        ticketId: ticket.id,
+        reason: "RECESSO",
+      }
+    }).catch(e => console.error("[EMAIL] Erro ao salvar log de e-mail de recesso:", e));
+
     return { success: true, bodyHtml: html };
   } catch (error) {
     console.error("[EMAIL SERVICE] Falha ao enviar email de recesso:", error);

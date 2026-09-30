@@ -170,6 +170,21 @@ model ProcessedEmail {
   @@map("processed_emails")
 }
 
+model SentEmail {
+  id          String   @id @default(uuid())
+  to          String
+  subject     String
+  bodyHtml    String?
+  ticketId    String?
+  reason      String
+  sentAt      DateTime @default(now())
+  ticket      Ticket?  @relation(fields: [ticketId], references: [id], onDelete: SetNull)
+
+  @@index([ticketId])
+  @@index([sentAt])
+  @@map("sent_emails")
+}
+
 model Requester {
   id         String    @id @default(uuid())
   name       String
@@ -319,6 +334,7 @@ model Ticket {
   children         Ticket[]           @relation("TicketHierarchy")
   solution         String?
   processedEmails  ProcessedEmail[]
+  sentEmails       SentEmail[]
   attachments      TicketAttachment[]
   comments         TicketComment[]
   history          TicketHistory[]

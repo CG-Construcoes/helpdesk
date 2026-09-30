@@ -91,6 +91,7 @@ export function TicketModal({
   const [observations, setObservations] = useState("");
   const [solutionText, setSolutionText] = useState("");
   const [totalTimeMinutes, setTotalTimeMinutes] = useState<number | null>(null);
+  const [sendEmail, setSendEmail] = useState(true);
 
   // Autocomplete Solicitante
   const [suggestions, setSuggestions] = useState<Array<{ id: string; name: string; email: string }>>([]);
@@ -131,6 +132,7 @@ export function TicketModal({
       setObservations("");
       setSolutionText("");
       setTotalTimeMinutes(null);
+      setSendEmail(true);
       setSuggestions([]);
       setShowSuggestions(false);
       setHasLoadedRequesters(false);
@@ -280,6 +282,7 @@ export function TicketModal({
         solutionText: status === "RESOLVIDO" ? solutionText : undefined,
         pauseReason: status === "AGUARDANDO_TERCEIROS" ? pauseReason : undefined,
         pauseNote: status === "AGUARDANDO_TERCEIROS" ? pauseNote : undefined,
+        sendEmail, // new field
       };
 
       const url = isEditing ? `/api/tickets/${ticketId}` : "/api/tickets";
@@ -535,6 +538,21 @@ export function TicketModal({
                   searchPlaceholder="Pesquisar técnico..."
                 />
               </div>
+
+              {/* Opção de Enviar E-mail (Apenas na criação, mas deixaremos visível para clareza se desejar. O back-end só envia na criação) */}
+              {!isEditing && (
+                <div className="flex items-center justify-between p-3 border border-border/40 bg-muted/10 rounded-xl mt-2">
+                  <div className="flex flex-col">
+                    <span className="text-[12px] font-bold text-foreground">Enviar e-mail para o cliente</span>
+                    <span className="text-[10px] text-muted-foreground">Notificar sobre a abertura do chamado.</span>
+                  </div>
+                  <Switch
+                    checked={sendEmail}
+                    onCheckedChange={setSendEmail}
+                    className="data-[state=checked]:bg-primary"
+                  />
+                </div>
+              )}
 
               {/* Tempos */}
               <div className="bg-background border border-border/60 shadow-sm rounded-xl p-4 space-y-4 mt-auto">

@@ -3,7 +3,7 @@ import { OrigemType, PrioridadeType, StatusType } from "@prisma/client";
 import { createAuditLog } from "@/services/audit/audit.service";
 import { getOrCreateRequester } from "@/services/requester/requester.service";
 import { calculateTotalTimeMinutes, getTicketMonthYear } from "./ticket-utils";
-import { sendTicketCreatedEmail } from "@/services/email/email.service";
+import { sendTicketCreatedEmail, sendTicketResolvedEmail } from "@/services/email/email.service";
 
 export interface CreateTicketInput {
   requesterName: string;
@@ -180,11 +180,20 @@ export async function createTicket(
     ipAddress,
   });
 
-  // Dispara o e-mail de notificação de abertura de forma assíncrona (não bloqueante)
+  // Dispara o e-mail de notificação de forma assíncrona (não bloqueante)
   if (sendEmail && requester.email) {
-    sendTicketCreatedEmail(ticket, requester.email, requester.name).catch((err) => {
-      console.error("[EMAIL] Erro inesperado ao tentar notificar abertura do chamado:", err);
-    });
+    if (status === "RESOLVIDO") {
+      // Se foi criado já como resolvido (comum em chamados manuais retroativos)
+      const solutionText = input.observations || "Chamado finalizado pela equipe de suporte.";
+      sendTicketResolvedEmail(ticket, requester.email, requester.name, solutionText).catch((err) => {
+        console.error("[EMAIL] Erro inesperado ao tentar notificar conclusão imediata do chamado:", err);
+      });
+    } else {
+      // Criação normal
+      sendTicketCreatedEmail(ticket, requester.email, requester.name).catch((err) => {
+        console.error("[EMAIL] Erro inesperado ao tentar notificar abertura do chamado:", err);
+      });
+    }
   }
 
   return ticket;
