@@ -114,6 +114,7 @@ model Settings {
   primaryColor           String    @default("#2563eb")
   secondaryColor         String    @default("#f1f5f9")
   department             String    @default("Departamento de TI")
+  cnpj                   String    @default("12.345.678/0001-99")
   phone                  String    @default("(11) 3456-7890")
   email                  String    @default("ti@cgconstrucoes.com.br")
   website                String    @default("www.cgconstrucoes.com.br")

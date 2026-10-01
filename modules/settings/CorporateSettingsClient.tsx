@@ -81,6 +81,7 @@ export function CorporateSettingsClient() {
     primaryColor: "#2563eb",
     secondaryColor: "#f1f5f9",
     department: "Departamento de TI",
+    cnpj: "12.345.678/0001-99",
     phone: "(11) 3456-7890",
     email: "ti@cgconstrucoes.com.br",
     website: "www.cgconstrucoes.com.br",
@@ -184,6 +185,7 @@ export function CorporateSettingsClient() {
       primaryColor: "#2563eb",
       secondaryColor: "#f1f5f9",
       department: "Departamento de TI",
+      cnpj: "12.345.678/0001-99",
       phone: "(11) 3456-7890",
       email: "ti@cgconstrucoes.com.br",
       website: "www.cgconstrucoes.com.br",
@@ -369,13 +371,9 @@ export function CorporateSettingsClient() {
                 <h3 className="text-xl font-bold text-foreground">
                   {form.systemName}
                 </h3>
-                <Badge className="bg-primary/10 text-primary border-primary/20 hover:bg-primary/20 rounded-full px-3">
-                  <Sparkle weight="fill" className="h-3 w-3 mr-1" />
-                  White Label Ativo
-                </Badge>
               </div>
               <p className="text-sm text-muted-foreground mt-0.5">
-                {form.department} • CNPJ 12.345.678/0001-99 • Sincronizado com PostgreSQL (Neon)
+                {form.department} • CNPJ {form.cnpj || "12.345.678/0001-99"} • Sincronizado com PostgreSQL (Neon)
               </p>
             </div>
           </div>
@@ -477,6 +475,18 @@ export function CorporateSettingsClient() {
                   value={form.department}
                   onChange={(e) => handleChange("department", e.target.value)}
                   placeholder="Ex: Departamento de TI"
+                  className="h-12 rounded-xl bg-background/50 border-border/80 focus-visible:ring-1 focus-visible:ring-primary/30"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-xs font-display font-bold text-muted-foreground uppercase tracking-widest">
+                  CNPJ
+                </label>
+                <Input
+                  value={form.cnpj}
+                  onChange={(e) => handleChange("cnpj", e.target.value)}
+                  placeholder="Ex: 12.345.678/0001-99"
                   className="h-12 rounded-xl bg-background/50 border-border/80 focus-visible:ring-1 focus-visible:ring-primary/30"
                 />
               </div>
