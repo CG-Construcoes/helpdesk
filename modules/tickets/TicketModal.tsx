@@ -276,6 +276,7 @@ export function TicketModal({
         status,
         origin,
         priority,
+        ticketDate: startTime ? new Date(startTime).toISOString() : null,
         startTime: startTime ? new Date(startTime).toISOString() : null,
         endTime: endTime ? new Date(endTime).toISOString() : null,
         observations,
