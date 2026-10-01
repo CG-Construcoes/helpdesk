@@ -8,11 +8,13 @@ const SECRET_KEY = new TextEncoder().encode(
 
 const COOKIE_NAME = "helpdesk_session";
 
-export async function signSessionToken(payload: UserSession): Promise<string> {
+import { prisma } from "@/lib/prisma";
+
+export async function signSessionToken(payload: UserSession, timeoutMin: number = 120): Promise<string> {
   return await new SignJWT({ ...payload })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
-    .setExpirationTime("7d")
+    .setExpirationTime(`${timeoutMin}m`)
     .sign(SECRET_KEY);
 }
 
@@ -26,13 +28,17 @@ export async function verifySessionToken(token: string): Promise<UserSession | n
 }
 
 export async function setSessionCookie(session: UserSession): Promise<void> {
-  const token = await signSessionToken(session);
+  const settings = await prisma.settings.findFirst({ select: { sessionTimeoutMin: true } });
+  const timeoutMin = settings?.sessionTimeoutMin || 120;
+  const timeoutSec = timeoutMin * 60;
+
+  const token = await signSessionToken(session, timeoutMin);
   const cookieStore = await cookies();
   cookieStore.set(COOKIE_NAME, token, {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
-    maxAge: 60 * 60 * 24 * 7, // 7 dias
+    maxAge: timeoutSec,
     path: "/",
   });
 }

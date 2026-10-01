@@ -39,8 +39,11 @@ export async function createTicketInMonthWithRetry(dataWithoutNum: any, ticketDa
   while (attempt < maxAttempts) {
     try {
       return await prisma.$transaction(async (tx) => {
+        const settings = await tx.settings.findFirst({ select: { monthlyNumbering: true } });
+        const useMonthly = settings?.monthlyNumbering ?? true;
+
         const lastTicket = await tx.ticket.findFirst({
-          where: { ticketMonthYear },
+          where: useMonthly ? { ticketMonthYear } : undefined,
           orderBy: { ticketNumber: "desc" },
           select: { ticketNumber: true },
         });
@@ -89,9 +92,11 @@ export async function createTicket(
     email: input.requesterEmail,
   });
 
+  const settings = await prisma.settings.findFirst();
+
   const startTime = input.startTime ? new Date(input.startTime) : new Date();
   let endTime = input.endTime ? new Date(input.endTime) : null;
-  const status = input.status || "ABERTO";
+  const status = input.status || (settings?.defaultStatus as StatusType) || "ABERTO";
 
   if (status === "RESOLVIDO" && !endTime) {
     endTime = new Date();
@@ -101,16 +106,21 @@ export async function createTicket(
   const ticketDateObj = input.ticketDate ? new Date(input.ticketDate) : new Date();
 
   let dueDate: Date | null = null;
+  let slaToUse = settings?.defaultSlaHours || 24;
+
   if (input.serviceId) {
     const service = await prisma.service.findUnique({
       where: { id: input.serviceId },
       select: { slaHours: true }
     });
-    
     if (service?.slaHours) {
-      dueDate = new Date(ticketDateObj.getTime());
-      dueDate.setHours(dueDate.getHours() + service.slaHours);
+      slaToUse = service.slaHours;
     }
+  }
+
+  if (slaToUse) {
+    dueDate = new Date(ticketDateObj.getTime());
+    dueDate.setHours(dueDate.getHours() + slaToUse);
   }
 
   if (input.parentId) {
@@ -135,8 +145,8 @@ export async function createTicket(
       technicianId: input.technicianId || null,
       serviceId: input.serviceId || null,
       status,
-      origin: input.origin || "MANUAL",
-      priority: input.priority || "MEDIA",
+      origin: input.origin || (settings?.defaultOrigin as OrigemType) || "MANUAL",
+      priority: input.priority || (settings?.defaultPriority as PrioridadeType) || "MEDIA",
       ticketDate: ticketDateObj,
       dueDate,
       startTime,

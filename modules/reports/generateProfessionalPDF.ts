@@ -38,10 +38,15 @@ export async function generateProfessionalPDF({
   });
 
   let stats: any;
+  let settings: any;
   try {
-    const res = await fetch(`/api/reports/executive?${params.toString()}`);
-    if (!res.ok) throw new Error("Falha ao buscar dados do relatório executivo");
-    stats = await res.json();
+    const [resStats, resSettings] = await Promise.all([
+      fetch(`/api/reports/executive?${params.toString()}`),
+      fetch(`/api/settings`)
+    ]);
+    if (!resStats.ok) throw new Error("Falha ao buscar dados do relatório executivo");
+    stats = await resStats.json();
+    if (resSettings.ok) settings = await resSettings.json();
   } catch (err) {
     console.error(err);
     alert("Erro ao gerar relatório. Verifique sua conexão e tente novamente.");
@@ -49,6 +54,11 @@ export async function generateProfessionalPDF({
   }
 
   const isDark = config.theme === "DARK";
+  const showLogo = settings?.reportShowLogo ?? true;
+  const showFooter = settings?.reportShowFooter ?? true;
+  const systemName = settings?.systemName || "CG Construções HelpDesk Pro";
+  const department = settings?.department || "Departamento de TI";
+  const favicon = settings?.favicon || "/cg-logo.png";
 
   // Formato RETRATO (A4)
   const doc = new jsPDF({
@@ -79,7 +89,7 @@ export async function generateProfessionalPDF({
     }
   }
 
-  const logoData = await loadImageAsBase64("/cg-logo.png");
+  const logoData = showLogo ? await loadImageAsBase64(favicon) : null;
 
   let currentPage = 1;
 
@@ -107,12 +117,12 @@ export async function generateProfessionalPDF({
     doc.setFont("helvetica", "bold");
     doc.setFontSize(14);
     doc.setTextColor(...textRGB);
-    doc.text("RELATÓRIO OPERACIONAL DE TI", startX + 40, currentY + 5);
+    doc.text("RELATÓRIO OPERACIONAL DE TI", startX + (showLogo ? 40 : 0), currentY + 5);
 
     doc.setFont("helvetica", "normal");
     doc.setFontSize(9);
     doc.setTextColor(...textMutedRGB);
-    doc.text("Indicadores de Atendimento e Suporte Técnico", startX + 40, currentY + 10);
+    doc.text("Indicadores de Atendimento e Suporte Técnico", startX + (showLogo ? 40 : 0), currentY + 10);
 
     const nowStr = new Date().toLocaleString("pt-BR");
     doc.setFont("helvetica", "bold");
@@ -131,16 +141,18 @@ export async function generateProfessionalPDF({
     doc.line(startX, currentY + 16, pageWidth - 14, currentY + 16);
 
     // Footer
-    const footerY = pageHeight - 12;
-    doc.setDrawColor(...borderRGB);
-    doc.setLineWidth(0.3);
-    doc.line(startX, footerY - 4, pageWidth - 14, footerY - 4);
+    if (showFooter) {
+      const footerY = pageHeight - 12;
+      doc.setDrawColor(...borderRGB);
+      doc.setLineWidth(0.3);
+      doc.line(startX, footerY - 4, pageWidth - 14, footerY - 4);
 
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(8);
-    doc.setTextColor(...textMutedRGB);
-    doc.text("CG Construções — Departamento de TI | Relatório gerado automaticamente pelo HelpDesk", startX, footerY);
-    doc.text(`Página ${currentPage}`, pageWidth - 14, footerY, { align: "right" });
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8);
+      doc.setTextColor(...textMutedRGB);
+      doc.text(`${systemName} — ${department} | Relatório gerado automaticamente pelo HelpDesk`, startX, footerY);
+      doc.text(`Página ${currentPage}`, pageWidth - 14, footerY, { align: "right" });
+    }
   }
 
   // =========================================================

@@ -830,9 +830,6 @@ export function CorporateSettingsClient() {
                     <p className="text-sm font-display font-bold text-foreground">
                       Numeração Sequencial com Reinício Mensal
                     </p>
-                    <Badge className="bg-primary/10 text-primary border-primary/20 rounded-full px-2 py-0.5 text-[10px]">
-                      Etapa 6 Ativo
-                    </Badge>
                   </div>
                   <p className="text-xs text-muted-foreground">
                     O número dos chamados é gerado por mês (ex: #1/07-2026) e reinicia no dia 1º de cada mês automaticamente.
