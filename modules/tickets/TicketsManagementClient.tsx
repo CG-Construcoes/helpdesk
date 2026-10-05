@@ -572,7 +572,7 @@ export default function TicketsManagementClient({
             <div className="flex items-center gap-1.5">
               <Clock className={`w-4 h-4 opacity-70 ${isPaused && !isBreached ? 'text-amber-500' : slaColor}`} />
               <span className={`text-[12px] whitespace-nowrap ${isPaused && !isBreached ? 'text-amber-600 font-semibold' : slaColor}`}>
-                {getDynamicTimeBadge(item)}
+                {new Date(item.ticketDate).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })} - {getDynamicTimeBadge(item)}
               </span>
             </div>
             {isPaused && (

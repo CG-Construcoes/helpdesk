@@ -111,16 +111,30 @@ export async function getTicketsPaginated(options: TicketFilterOptions) {
   if (options.priority && options.priority !== "ALL") {
     where.priority = options.priority;
   }
+  const dateFilter: any = {};
   if (options.monthYear && options.monthYear !== "ALL") {
-    where.ticketMonthYear = options.monthYear;
+    dateFilter.ticketMonthYear = options.monthYear;
   } else if (options.startDate || options.endDate) {
-    where.ticketDate = {};
+    dateFilter.ticketDate = {};
     if (options.startDate) {
-      where.ticketDate.gte = new Date(options.startDate);
+      dateFilter.ticketDate.gte = new Date(options.startDate);
     }
     if (options.endDate) {
-      where.ticketDate.lte = new Date(options.endDate);
+      dateFilter.ticketDate.lte = new Date(options.endDate);
     }
+  }
+
+  if (Object.keys(dateFilter).length > 0) {
+    where.AND = [
+      ...(where.AND || []),
+      {
+        OR: [
+          dateFilter,
+          { status: { notIn: ["RESOLVIDO", "CANCELADO"] } },
+          { technicianId: null }
+        ]
+      }
+    ];
   }
 
   if (options.query && options.query.trim().length > 0) {
