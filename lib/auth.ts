@@ -43,10 +43,15 @@ export async function setSessionCookie(session: UserSession): Promise<void> {
   });
 }
 
-export async function getSession(): Promise<UserSession | null> {
+export async function getSession(request?: import("next/server").NextRequest): Promise<UserSession | null> {
   try {
-    const cookieStore = await cookies();
-    const token = cookieStore.get(COOKIE_NAME)?.value;
+    let token: string | undefined;
+    if (request) {
+      token = request.cookies.get(COOKIE_NAME)?.value;
+    } else {
+      const cookieStore = await cookies();
+      token = cookieStore.get(COOKIE_NAME)?.value;
+    }
     if (!token) return null;
     return await verifySessionToken(token);
   } catch (error) {
