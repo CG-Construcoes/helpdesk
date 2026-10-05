@@ -344,6 +344,11 @@ export async function sendTicketCreatedEmail(ticketData: any, requesterEmail: st
     return { success: false, reason: 'NO_EMAIL' };
   }
 
+  if (requesterEmail.toLowerCase() === 'helpdesk@konstroi.com') {
+    console.log(`[EMAIL] Solicitante é a Konstroi. Abortando notificação automática de abertura.`);
+    return { success: false, reason: 'BLOCKED_SENDER' };
+  }
+
   console.log(`[EMAIL] Preparando notificação de abertura de chamado para ${requesterEmail}...`);
   const settings = await getCorporateSettings();
   const dateStr = ticketData.ticketDate ? new Date(ticketData.ticketDate).toLocaleDateString('pt-BR') : new Date().toLocaleDateString('pt-BR');
@@ -364,7 +369,7 @@ export async function sendTicketCreatedEmail(ticketData: any, requesterEmail: st
     '{{systemName}}': settings.systemName,
   };
   
-  let subject = `Chamado #${ticketData.ticketNumber} aberto — ${settings.systemName}`;
+  let subject = `Recebido: ${ticketData.problem}`;
   let content = '';
 
   if (template) {
@@ -384,46 +389,45 @@ export async function sendTicketCreatedEmail(ticketData: any, requesterEmail: st
     // Template hardcoded fallback (caso ainda não exista no banco)
     content = `
       <p style="margin-top: 0;">Olá, <strong>${requesterName}</strong>.</p>
-      <p>Recebemos sua solicitação e ela foi registrada com sucesso em nossa Central de Suporte de TI.</p>
-      
-      <div style="border: 1px solid #e2e8f0; border-radius: 6px; overflow: hidden; margin: 32px 0;" class="ticket-card">
-        <div style="background-color: #f8fafc; padding: 12px 16px; border-bottom: 1px solid #e2e8f0; font-size: 11px; font-weight: 700; color: #64748b; letter-spacing: 0.5px; text-transform: uppercase;" class="ticket-header">
-          Detalhes do Atendimento
-        </div>
-        <div style="padding: 16px;">
-          <div style="margin-bottom: 16px;">
-            <div style="font-size: 12px; color: #64748b; margin-bottom: 2px;" class="ticket-label">Chamado</div>
-            <div style="font-size: 16px; font-weight: 700; color: #0f172a;" class="ticket-value">#${ticketData.ticketNumber}</div>
-          </div>
-          <div style="margin-bottom: 16px;">
-            <div style="font-size: 12px; color: #64748b; margin-bottom: 2px;" class="ticket-label">Solicitação</div>
-            <div style="font-size: 15px; color: #334155;" class="ticket-value">${ticketData.problem}</div>
-          </div>
-          <div>
-            <div style="font-size: 12px; color: #64748b; margin-bottom: 2px;" class="ticket-label">Data de abertura</div>
-            <div style="font-size: 14px; color: #334155;" class="ticket-value">${dateStr}</div>
-          </div>
-        </div>
-      </div>
-      
-      <div style="display: flex; align-items: center; margin-bottom: 24px; color: #16a34a; font-weight: 600; font-size: 14px;">
-        <span style="display: inline-block; margin-right: 8px;">✓</span> Solicitação recebida
-      </div>
-      
-      <p>Nossa equipe técnica já recebeu sua solicitação e realizará a análise necessária para dar continuidade ao atendimento.</p>
-      <p>Você receberá novas notificações sempre que houver uma atualização relevante em sua solicitação.</p>
+      <p>Recebemos a sua solicitação, que foi registrada junto a central de atendimento sob protocolo Nº <strong>${ticketData.ticketNumber}</strong> (${ticketData.problem}).</p>
+      <p>Em breve entraremos em contato para tratar sobre o assunto.</p>
     `;
   }
   
-  const html = getEmailLayout(
-    template?.primaryColor ? { ...settings, primaryColor: template.primaryColor } : settings, 
-    template?.name || "Seu chamado foi registrado", 
+  // Utilizando HTML simples para não incluir a assinatura caso use o template default
+  const html = template ? getEmailLayout(
+    template.primaryColor ? { ...settings, primaryColor: template.primaryColor } : settings, 
+    template.name || "Seu chamado foi registrado", 
     content
-  );
+  ) : `
+    <!DOCTYPE html>
+    <html lang="pt-BR">
+    <head>
+      <meta charset="UTF-8">
+      <style>
+        body {
+          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+          color: #334155;
+          line-height: 1.6;
+          font-size: 15px;
+        }
+      </style>
+    </head>
+    <body>
+      ${content}
+    </body>
+    </html>
+  `;
   
   const { ccList, inReplyTo } = await getTicketEmailMetadata(ticketData.id, requesterEmail);
   
-  return sendHtmlEmail(requesterEmail, subject, html, inReplyTo, ccList, undefined, { ticketId: ticketData.id, reason: "ABERTURA" });
+  let cleanCcList = ccList;
+  if (cleanCcList) {
+    cleanCcList = cleanCcList.filter(c => c.toLowerCase() !== 'helpdesk@konstroi.com');
+    if (cleanCcList.length === 0) cleanCcList = undefined;
+  }
+  
+  return sendHtmlEmail(requesterEmail, subject, html, inReplyTo, cleanCcList, undefined, { ticketId: ticketData.id, reason: "ABERTURA" });
 }
 
 /**
@@ -431,6 +435,11 @@ export async function sendTicketCreatedEmail(ticketData: any, requesterEmail: st
  */
 export async function sendTicketResolvedEmail(ticketData: any, requesterEmail: string, requesterName: string, solutionText: string) {
   if (!requesterEmail) return { success: false, reason: 'NO_EMAIL' };
+
+  if (requesterEmail.toLowerCase() === 'helpdesk@konstroi.com') {
+    console.log(`[EMAIL] Solicitante é a Konstroi. Abortando notificação de fechamento.`);
+    return { success: false, reason: 'BLOCKED_SENDER' };
+  }
 
   console.log(`[EMAIL] Preparando notificação de resolução para ${requesterEmail}...`);
   const settings = await getCorporateSettings();
@@ -484,7 +493,13 @@ export async function sendTicketResolvedEmail(ticketData: any, requesterEmail: s
   
   const { ccList, inReplyTo } = await getTicketEmailMetadata(ticketData.id, requesterEmail);
 
-  return sendHtmlEmail(requesterEmail, subject, html, inReplyTo, ccList, undefined, { ticketId: ticketData.id, reason: "FECHAMENTO" });
+  let cleanCcList = ccList;
+  if (cleanCcList) {
+    cleanCcList = cleanCcList.filter(c => c.toLowerCase() !== 'helpdesk@konstroi.com');
+    if (cleanCcList.length === 0) cleanCcList = undefined;
+  }
+
+  return sendHtmlEmail(requesterEmail, subject, html, inReplyTo, cleanCcList, undefined, { ticketId: ticketData.id, reason: "FECHAMENTO" });
 }
 /**
  * Sends a recess auto-reply when the system is in recess mode.
