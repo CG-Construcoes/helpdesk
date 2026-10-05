@@ -118,7 +118,15 @@ export async function checkAndProcessEmails() {
 
             // Tenta achar pelo assunto base se for uma resposta
             if (!linkedTicket) {
-              const cleanSubject = (s: string) => s.replace(/^(Re|Fwd|Enc|Res|En|Tr|Aw):\s*/ig, '').trim();
+              const cleanSubject = (s: string) => {
+                let cleaned = s;
+                let prev = '';
+                while (cleaned !== prev) {
+                  prev = cleaned;
+                  cleaned = cleaned.replace(/^(Re|Fwd|Enc|Res|En|Tr|Aw|Resolvido|Resolved|Fechado|Closed|Conclu[íi]do):\s*/ig, '').trim();
+                }
+                return cleaned;
+              };
               const baseSubject = cleanSubject(subject);
               
               if (baseSubject && baseSubject !== subject && baseSubject.length > 5) {
