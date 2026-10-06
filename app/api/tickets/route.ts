@@ -9,7 +9,7 @@ import { OrigemType, PrioridadeType, StatusType } from "@prisma/client";
 
 export async function GET(request: NextRequest) {
   try {
-    const session = await getSession(request);
+    const session = await getSession();
     if (!session) {
       return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
     }
@@ -104,7 +104,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const session = await getSession(request);
+    const session = await getSession();
     if (!session) {
       return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
     }
