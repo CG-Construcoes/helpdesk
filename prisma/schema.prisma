@@ -36,6 +36,7 @@ model User {
   @@index([email])
   @@index([role])
   @@index([deletedAt])
+  @@index([role, isActive])
   @@map("users")
 }
 
@@ -220,6 +221,7 @@ model Sector {
 
   @@index([name])
   @@index([deletedAt])
+  @@index([isActive, deletedAt])
   @@map("sectors")
 }
 
@@ -355,6 +357,15 @@ model Ticket {
   @@index([status])
   @@index([isArchived])
   @@index([deletedAt])
+  @@index([status, deletedAt])
+  @@index([technicianId, status])
+  @@index([serviceId, status])
+  @@index([sectorId, status])
+  @@index([ticketDate, status])
+  @@index([ticketMonthYear, status])
+  @@index([parentId, deletedAt])
+  @@index([requesterId, deletedAt])
+  @@index([ticketDate, deletedAt])
   @@map("tickets")
 }
 
