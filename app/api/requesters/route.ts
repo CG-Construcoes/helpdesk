@@ -57,6 +57,14 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(newRequester, { status: 201 });
   } catch (error: any) {
     console.error("[POST /api/requesters] Erro:", error);
+    
+    if (error.code === "P2002") {
+      return NextResponse.json(
+        { error: "Já existe um solicitante com este e-mail." },
+        { status: 400 }
+      );
+    }
+
     return NextResponse.json(
       { error: "Erro ao criar solicitante", details: error.message },
       { status: 500 }

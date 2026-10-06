@@ -20,6 +20,14 @@ export async function PATCH(
     return NextResponse.json(updated, { status: 200 });
   } catch (error: any) {
     console.error("[PATCH /api/requesters/[id]] Erro:", error);
+    
+    if (error.code === "P2002") {
+      return NextResponse.json(
+        { error: "Já existe um solicitante com este e-mail." },
+        { status: 400 }
+      );
+    }
+
     return NextResponse.json(
       { error: "Erro ao atualizar solicitante", details: error.message },
       { status: 500 }
