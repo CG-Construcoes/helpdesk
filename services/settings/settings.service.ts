@@ -8,6 +8,7 @@ export interface CorporateSettingsDTO {
   primaryColor: string;
   secondaryColor: string;
   department: string;
+  cnpj: string;
   phone: string;
   email: string;
   website: string;
@@ -76,6 +77,7 @@ export async function getCorporateSettings(): Promise<CorporateSettingsDTO> {
         primaryColor: "#2563eb",
         secondaryColor: "#f1f5f9",
         department: "Departamento de TI",
+        cnpj: "12.345.678/0001-99",
         phone: "(11) 3456-7890",
         email: "ti@cgconstrucoes.com.br",
         website: "www.cgconstrucoes.com.br",
@@ -112,6 +114,7 @@ export async function getCorporateSettings(): Promise<CorporateSettingsDTO> {
     primaryColor: settings.primaryColor,
     secondaryColor: settings.secondaryColor,
     department: (settings as any).department ?? "Departamento de TI",
+    cnpj: (settings as any).cnpj ?? "12.345.678/0001-99",
     phone: (settings as any).phone ?? "(11) 3456-7890",
     email: (settings as any).email ?? "ti@cgconstrucoes.com.br",
     website: (settings as any).website ?? "www.cgconstrucoes.com.br",
@@ -159,6 +162,7 @@ export async function updateCorporateSettings(
       primaryColor: data.primaryColor ?? current.primaryColor,
       secondaryColor: data.secondaryColor ?? current.secondaryColor,
       department: data.department ?? current.department,
+      cnpj: data.cnpj ?? current.cnpj,
       phone: data.phone ?? current.phone,
       email: data.email ?? current.email,
       website: data.website ?? current.website,
@@ -218,6 +222,7 @@ export async function updateCorporateSettings(
     primaryColor: updated.primaryColor,
     secondaryColor: updated.secondaryColor,
     department: (updated as any).department ?? "Departamento de TI",
+    cnpj: (updated as any).cnpj ?? "12.345.678/0001-99",
     phone: (updated as any).phone ?? "(11) 3456-7890",
     email: (updated as any).email ?? "ti@cgconstrucoes.com.br",
     website: (updated as any).website ?? "www.cgconstrucoes.com.br",

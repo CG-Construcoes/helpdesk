@@ -1,13 +1,19 @@
-import { PrismaClient } from '@prisma/client'
-const prisma = new PrismaClient()
+import { prisma } from './lib/prisma';
 
 async function main() {
-  const users = await prisma.requester.findMany({
-    where: { email: 'luiseduardo@cgconstrucoes.com' }
-  })
-  console.log('Requesters with this email:', users)
+  const reqs = await prisma.requester.findMany({
+    where: { email: { contains: 'luiseduardo' } }
+  });
+  console.log(reqs);
+  
+  const byId = await prisma.requester.findUnique({
+    where: { id: 'a07d9910-169c-4fe5-a491-2d300725e385' }
+  });
+  console.log('ById:', byId);
 }
 
 main()
   .catch(e => console.error(e))
-  .finally(() => prisma.$disconnect())
+  .finally(async () => {
+    await prisma.$disconnect();
+  });

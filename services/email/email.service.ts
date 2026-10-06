@@ -195,7 +195,8 @@ export async function sendHtmlEmail(
   html: string, 
   inReplyToMessageId?: string, 
   cc?: string[],
-  existingAttachments?: any[]
+  existingAttachments?: any[],
+  metadata?: { ticketId?: string, reason: string }
 ) {
   const fromEmail = process.env.SENDGRID_FROM_EMAIL || 'suporte@empresa.com.br';
   const fromName = process.env.SENDGRID_FROM_NAME || 'HelpDesk';
@@ -233,6 +234,20 @@ export async function sendHtmlEmail(
   try {
     await sgMail.send(msg);
     console.log(`[EMAIL] E-mail enviado com sucesso para ${to}`);
+    
+    // Log to SentEmail
+    if (metadata) {
+      await prisma.sentEmail.create({
+        data: {
+          to,
+          subject,
+          bodyHtml: emailHtml,
+          ticketId: metadata.ticketId,
+          reason: metadata.reason,
+        }
+      }).catch(e => console.error("[EMAIL] Erro ao salvar log de e-mail enviado:", e));
+    }
+
     return { success: true, bodyHtml: emailHtml };
   } catch (error: any) {
     console.error(`[EMAIL] Falha ao enviar e-mail para ${to}:`, error.response?.body || error.message);
@@ -299,7 +314,7 @@ export async function sendCustomEmail(
   // Como o content já vem como HTML (do editor frontend ou templates),
   // não substituímos os \n por <br /> para não quebrar tabelas e layouts como a assinatura.
   const html = getEmailLayout(settings, "", content);
-  return sendHtmlEmail(to, subject, html, inReplyToMessageId, cleanCc, attachments);
+  return sendHtmlEmail(to, subject, html, inReplyToMessageId, cleanCc, attachments, { reason: "RESPOSTA_MANUAL", ticketId: undefined }); // we don't have ticketId easily here unless passed, let's update signature later if needed.
 }
 
 /**
@@ -329,6 +344,11 @@ export async function sendTicketCreatedEmail(ticketData: any, requesterEmail: st
     return { success: false, reason: 'NO_EMAIL' };
   }
 
+  if (requesterEmail.toLowerCase() === 'helpdesk@konstroi.com') {
+    console.log(`[EMAIL] Solicitante é a Konstroi. Abortando notificação automática de abertura.`);
+    return { success: false, reason: 'BLOCKED_SENDER' };
+  }
+
   console.log(`[EMAIL] Preparando notificação de abertura de chamado para ${requesterEmail}...`);
   const settings = await getCorporateSettings();
   const dateStr = ticketData.ticketDate ? new Date(ticketData.ticketDate).toLocaleDateString('pt-BR') : new Date().toLocaleDateString('pt-BR');
@@ -349,7 +369,7 @@ export async function sendTicketCreatedEmail(ticketData: any, requesterEmail: st
     '{{systemName}}': settings.systemName,
   };
   
-  let subject = `Chamado #${ticketData.ticketNumber} aberto — ${settings.systemName}`;
+  let subject = `Recebido: ${ticketData.problem}`;
   let content = '';
 
   if (template) {
@@ -369,46 +389,45 @@ export async function sendTicketCreatedEmail(ticketData: any, requesterEmail: st
     // Template hardcoded fallback (caso ainda não exista no banco)
     content = `
       <p style="margin-top: 0;">Olá, <strong>${requesterName}</strong>.</p>
-      <p>Recebemos sua solicitação e ela foi registrada com sucesso em nossa Central de Suporte de TI.</p>
-      
-      <div style="border: 1px solid #e2e8f0; border-radius: 6px; overflow: hidden; margin: 32px 0;" class="ticket-card">
-        <div style="background-color: #f8fafc; padding: 12px 16px; border-bottom: 1px solid #e2e8f0; font-size: 11px; font-weight: 700; color: #64748b; letter-spacing: 0.5px; text-transform: uppercase;" class="ticket-header">
-          Detalhes do Atendimento
-        </div>
-        <div style="padding: 16px;">
-          <div style="margin-bottom: 16px;">
-            <div style="font-size: 12px; color: #64748b; margin-bottom: 2px;" class="ticket-label">Chamado</div>
-            <div style="font-size: 16px; font-weight: 700; color: #0f172a;" class="ticket-value">#${ticketData.ticketNumber}</div>
-          </div>
-          <div style="margin-bottom: 16px;">
-            <div style="font-size: 12px; color: #64748b; margin-bottom: 2px;" class="ticket-label">Solicitação</div>
-            <div style="font-size: 15px; color: #334155;" class="ticket-value">${ticketData.problem}</div>
-          </div>
-          <div>
-            <div style="font-size: 12px; color: #64748b; margin-bottom: 2px;" class="ticket-label">Data de abertura</div>
-            <div style="font-size: 14px; color: #334155;" class="ticket-value">${dateStr}</div>
-          </div>
-        </div>
-      </div>
-      
-      <div style="display: flex; align-items: center; margin-bottom: 24px; color: #16a34a; font-weight: 600; font-size: 14px;">
-        <span style="display: inline-block; margin-right: 8px;">✓</span> Solicitação recebida
-      </div>
-      
-      <p>Nossa equipe técnica já recebeu sua solicitação e realizará a análise necessária para dar continuidade ao atendimento.</p>
-      <p>Você receberá novas notificações sempre que houver uma atualização relevante em sua solicitação.</p>
+      <p>Recebemos a sua solicitação, que foi registrada junto a central de atendimento sob protocolo Nº <strong>${ticketData.ticketNumber}</strong> (${ticketData.problem}).</p>
+      <p>Em breve entraremos em contato para tratar sobre o assunto.</p>
     `;
   }
   
-  const html = getEmailLayout(
-    template?.primaryColor ? { ...settings, primaryColor: template.primaryColor } : settings, 
-    template?.name || "Seu chamado foi registrado", 
+  // Utilizando HTML simples para não incluir a assinatura caso use o template default
+  const html = template ? getEmailLayout(
+    template.primaryColor ? { ...settings, primaryColor: template.primaryColor } : settings, 
+    template.name || "Seu chamado foi registrado", 
     content
-  );
+  ) : `
+    <!DOCTYPE html>
+    <html lang="pt-BR">
+    <head>
+      <meta charset="UTF-8">
+      <style>
+        body {
+          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+          color: #334155;
+          line-height: 1.6;
+          font-size: 15px;
+        }
+      </style>
+    </head>
+    <body>
+      ${content}
+    </body>
+    </html>
+  `;
   
   const { ccList, inReplyTo } = await getTicketEmailMetadata(ticketData.id, requesterEmail);
   
-  return sendHtmlEmail(requesterEmail, subject, html, inReplyTo, ccList);
+  let cleanCcList = ccList;
+  if (cleanCcList) {
+    cleanCcList = cleanCcList.filter(c => c.toLowerCase() !== 'helpdesk@konstroi.com');
+    if (cleanCcList.length === 0) cleanCcList = undefined;
+  }
+  
+  return sendHtmlEmail(requesterEmail, subject, html, inReplyTo, cleanCcList, undefined, { ticketId: ticketData.id, reason: "ABERTURA" });
 }
 
 /**
@@ -416,6 +435,11 @@ export async function sendTicketCreatedEmail(ticketData: any, requesterEmail: st
  */
 export async function sendTicketResolvedEmail(ticketData: any, requesterEmail: string, requesterName: string, solutionText: string) {
   if (!requesterEmail) return { success: false, reason: 'NO_EMAIL' };
+
+  if (requesterEmail.toLowerCase() === 'helpdesk@konstroi.com') {
+    console.log(`[EMAIL] Solicitante é a Konstroi. Abortando notificação de fechamento.`);
+    return { success: false, reason: 'BLOCKED_SENDER' };
+  }
 
   console.log(`[EMAIL] Preparando notificação de resolução para ${requesterEmail}...`);
   const settings = await getCorporateSettings();
@@ -428,97 +452,54 @@ export async function sendTicketResolvedEmail(ticketData: any, requesterEmail: s
     '{{requesterName}}': requesterName || 'Cliente',
     '{{ticketNumber}}': String(ticketData.ticketNumber || ''),
     '{{solution}}': solutionText || 'Chamado finalizado pela equipe de suporte.',
+    '{{systemName}}': settings.systemName,
   };
   
   let subject = `Chamado #${ticketData.ticketNumber} resolvido — ${settings.systemName}`;
+  let content = '';
 
   if (template) {
     subject = template.subject;
+    content = template.bodyHtml;
     for (const [key, value] of Object.entries(vars)) {
       subject = subject.replace(new RegExp(key, 'g'), value);
+      content = content.replace(new RegExp(key, 'g'), value);
     }
+    
+    if (!content.trim()) {
+      content = `<p>Seu chamado foi resolvido.</p>`;
+    }
+  } else {
+    content = `
+      <p style="margin-top: 0;">Olá, <strong>${vars['{{requesterName}}']}</strong>!</p>
+      <p>Temos uma ótima notícia: o seu chamado foi <strong>resolvido</strong>!</p>
+      
+      <div style="margin-top: 25px; background-color: #f8fafc; border-radius: 6px; border: 1px solid #e2e8f0; padding: 16px;">
+        <p style="margin-top: 0; font-size: 14px; color: #333333; line-height: 1.6;">
+          <strong>Chamado:</strong> #${vars['{{ticketNumber}}']}<br>
+          <strong>Solução:</strong> ${vars['{{solution}}']}
+        </p>
+      </div>
+      
+      <p style="margin-top: 25px;">Se precisar de mais alguma coisa, não hesite em abrir um novo chamado.</p>
+    `;
   }
 
-  // Outlook desktop compatible table layout
-  const html = `
-<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-  <meta charset="UTF-8">
-  <title>Chamado Resolvido</title>
-</head>
-<body style="margin: 0; padding: 0; font-family: Arial, sans-serif; background-color: #ffffff;">
-  <table border="0" cellpadding="0" cellspacing="0" width="100%" style="max-width: 600px; margin: 0 auto; background-color: #ffffff;">
-    <tr>
-      <td style="padding: 30px 20px 20px 20px;">
-        <!-- Header -->
-        <table border="0" cellpadding="0" cellspacing="0" width="100%">
-          <tr>
-            <td style="font-size: 14px; font-weight: bold; color: #333333; text-transform: uppercase;">
-              CG CONSTRUÇÕES
-            </td>
-          </tr>
-          <tr>
-            <td style="font-size: 13px; color: #666666; padding-top: 4px;">
-              Central de Suporte de TI
-            </td>
-          </tr>
-        </table>
-
-        <!-- Title -->
-        <table border="0" cellpadding="0" cellspacing="0" width="100%" style="margin-top: 30px;">
-          <tr>
-            <td style="font-size: 22px; font-weight: bold; color: #111111;">
-              Chamado #${vars['{{ticketNumber}}']} Resolvido
-            </td>
-          </tr>
-        </table>
-
-        <!-- Body -->
-        <table border="0" cellpadding="0" cellspacing="0" width="100%" style="margin-top: 20px;">
-          <tr>
-            <td style="font-size: 15px; color: #333333; line-height: 1.5;">
-              Olá, <strong>${vars['{{requesterName}}']}</strong>!
-              <br><br>
-              Temos uma ótima notícia: o seu chamado foi <strong>resolvido</strong>!
-            </td>
-          </tr>
-        </table>
-
-        <!-- Info Box -->
-        <table border="0" cellpadding="0" cellspacing="0" width="100%" style="margin-top: 25px; background-color: #f8fafc; border-radius: 6px; border: 1px solid #e2e8f0;">
-          <tr>
-            <td style="padding: 16px; font-size: 14px; color: #333333; line-height: 1.6;">
-              <strong>Chamado:</strong> #${vars['{{ticketNumber}}']}<br>
-              <strong>Solução:</strong> ${vars['{{solution}}']}
-            </td>
-          </tr>
-        </table>
-
-        <!-- Footer Text -->
-        <table border="0" cellpadding="0" cellspacing="0" width="100%" style="margin-top: 25px;">
-          <tr>
-            <td style="font-size: 14px; color: #333333;">
-              Se precisar de mais alguma coisa, não hesite em abrir um novo chamado.
-            </td>
-          </tr>
-          <tr>
-            <td style="font-size: 14px; color: #666666; padding-top: 25px;">
-              <strong>CG Construções</strong><br>
-              Central de Suporte de TI
-            </td>
-          </tr>
-        </table>
-      </td>
-    </tr>
-  </table>
-</body>
-</html>
-  `;
+  const html = getEmailLayout(
+    template?.primaryColor ? { ...settings, primaryColor: template.primaryColor } : settings, 
+    template?.name || "Chamado Resolvido", 
+    content
+  );
   
   const { ccList, inReplyTo } = await getTicketEmailMetadata(ticketData.id, requesterEmail);
 
-  return sendHtmlEmail(requesterEmail, subject, html, inReplyTo, ccList);
+  let cleanCcList = ccList;
+  if (cleanCcList) {
+    cleanCcList = cleanCcList.filter(c => c.toLowerCase() !== 'helpdesk@konstroi.com');
+    if (cleanCcList.length === 0) cleanCcList = undefined;
+  }
+
+  return sendHtmlEmail(requesterEmail, subject, html, inReplyTo, cleanCcList, undefined, { ticketId: ticketData.id, reason: "FECHAMENTO" });
 }
 /**
  * Sends a recess auto-reply when the system is in recess mode.
@@ -563,6 +544,17 @@ export async function sendRecessEmail(ticket: any, toEmail: string, returnDate?:
     };
 
     await sgMail.send(msg);
+    
+    await prisma.sentEmail.create({
+      data: {
+        to: toEmail,
+        subject: msg.subject,
+        bodyHtml: html,
+        ticketId: ticket.id,
+        reason: "RECESSO",
+      }
+    }).catch(e => console.error("[EMAIL] Erro ao salvar log de e-mail de recesso:", e));
+
     return { success: true, bodyHtml: html };
   } catch (error) {
     console.error("[EMAIL SERVICE] Falha ao enviar email de recesso:", error);

@@ -36,6 +36,7 @@ model User {
   @@index([email])
   @@index([role])
   @@index([deletedAt])
+  @@index([role, isActive])
   @@map("users")
 }
 
@@ -114,6 +115,7 @@ model Settings {
   primaryColor           String    @default("#2563eb")
   secondaryColor         String    @default("#f1f5f9")
   department             String    @default("Departamento de TI")
+  cnpj                   String    @default("12.345.678/0001-99")
   phone                  String    @default("(11) 3456-7890")
   email                  String    @default("ti@cgconstrucoes.com.br")
   website                String    @default("www.cgconstrucoes.com.br")
@@ -170,6 +172,21 @@ model ProcessedEmail {
   @@map("processed_emails")
 }
 
+model SentEmail {
+  id          String   @id @default(uuid())
+  to          String
+  subject     String
+  bodyHtml    String?
+  ticketId    String?
+  reason      String
+  sentAt      DateTime @default(now())
+  ticket      Ticket?  @relation(fields: [ticketId], references: [id], onDelete: SetNull)
+
+  @@index([ticketId])
+  @@index([sentAt])
+  @@map("sent_emails")
+}
+
 model Requester {
   id         String    @id @default(uuid())
   name       String
@@ -204,6 +221,7 @@ model Sector {
 
   @@index([name])
   @@index([deletedAt])
+  @@index([isActive, deletedAt])
   @@map("sectors")
 }
 
@@ -319,6 +337,7 @@ model Ticket {
   children         Ticket[]           @relation("TicketHierarchy")
   solution         String?
   processedEmails  ProcessedEmail[]
+  sentEmails       SentEmail[]
   attachments      TicketAttachment[]
   comments         TicketComment[]
   history          TicketHistory[]
@@ -338,6 +357,15 @@ model Ticket {
   @@index([status])
   @@index([isArchived])
   @@index([deletedAt])
+  @@index([status, deletedAt])
+  @@index([technicianId, status])
+  @@index([serviceId, status])
+  @@index([sectorId, status])
+  @@index([ticketDate, status])
+  @@index([ticketMonthYear, status])
+  @@index([parentId, deletedAt])
+  @@index([requesterId, deletedAt])
+  @@index([ticketDate, deletedAt])
   @@map("tickets")
 }
 

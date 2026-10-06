@@ -63,10 +63,10 @@ export const NAVIGATION_ITEMS: NavigationItem[] = [
     description: "Estatísticas e relatórios",
   },
   {
-    title: "E-mails Recebidos",
-    href: "/emails-recebidos",
+    title: "E-mails",
+    href: "/emails-recebidos", // A rota pode continuar a mesma ou podemos mudar depois
     icon: EnvelopeSimple,
-    description: "Visualizar e-mails processados via IMAP",
+    description: "Gerenciar e-mails enviados e recebidos",
   },
   {
     title: "Configurações",

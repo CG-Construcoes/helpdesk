@@ -203,19 +203,38 @@ export async function processBulkImport(rows: BulkTicketInput[], actorId?: strin
 
   // 6. Gerar Numeração e Inserir com Transação
   await prisma.$transaction(async (tx) => {
-    // Para cada mês, buscar o último número e iterar
-    for (const [monthYear, monthTickets] of Array.from(ticketsByMonth.entries())) {
+    const settings = await tx.settings.findFirst({ select: { monthlyNumbering: true } });
+    const useMonthly = settings?.monthlyNumbering ?? true;
+
+    if (useMonthly) {
+      // Para cada mês, buscar o último número e iterar
+      for (const [monthYear, monthTickets] of Array.from(ticketsByMonth.entries())) {
+        const lastTicket = await tx.ticket.findFirst({
+          where: { ticketMonthYear: monthYear },
+          orderBy: { ticketNumber: "desc" },
+          select: { ticketNumber: true },
+        });
+
+        let nextNumber = (lastTicket?.ticketNumber || 0) + 1;
+        
+        for (const t of monthTickets) {
+          t.ticketNumber = nextNumber++;
+          ticketsToInsert.push(t);
+        }
+      }
+    } else {
+      // Numeração contínua
       const lastTicket = await tx.ticket.findFirst({
-        where: { ticketMonthYear: monthYear },
         orderBy: { ticketNumber: "desc" },
         select: { ticketNumber: true },
       });
-
       let nextNumber = (lastTicket?.ticketNumber || 0) + 1;
-      
-      for (const t of monthTickets) {
-        t.ticketNumber = nextNumber++;
-        ticketsToInsert.push(t);
+
+      for (const monthTickets of ticketsByMonth.values()) {
+        for (const t of monthTickets) {
+          t.ticketNumber = nextNumber++;
+          ticketsToInsert.push(t);
+        }
       }
     }
 

@@ -1,5 +1,6 @@
 export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
+import { unstable_cache } from "next/cache";
 import { getSession } from "@/lib/auth";
 import { hasPermission } from "@/services/rbac/rbac.service";
 import {
@@ -40,7 +41,14 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    const stats = await getDashboardStats({
+    // Cache de 30 segundos para reduzir carga no banco
+    const getCachedStats = unstable_cache(
+      async (params) => getDashboardStats(params),
+      ["dashboard-stats"],
+      { revalidate: 30, tags: ["dashboard"] }
+    );
+
+    const stats = await getCachedStats({
       period: monthYear ? "MONTHLY_SPECIFIC" : (periodParam || "LAST_30_DAYS"),
       startDate,
       endDate,

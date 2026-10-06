@@ -20,6 +20,7 @@ export interface TicketFilterOptions {
   userId?: string;
   role?: string;
   slaRisk?: boolean;
+  userEmail?: string; // Otimização: evitar query extra para solicitantes
 }
 
 /**
@@ -77,9 +78,17 @@ export async function getTicketsPaginated(options: TicketFilterOptions) {
   }
 
   if (options.role === "SOLICITANTE" && options.userId) {
-     const user = await prisma.user.findUnique({ where: { id: options.userId } });
-     if (user) {
+     // Otimização: usar userEmail se disponível, caso contrário fazer query
+     if (options.userEmail) {
+       where.requester = { email: options.userEmail };
+     } else {
+       const user = await prisma.user.findUnique({
+         where: { id: options.userId },
+         select: { email: true }
+       });
+       if (user) {
          where.requester = { email: user.email };
+       }
      }
   }
 
@@ -111,16 +120,30 @@ export async function getTicketsPaginated(options: TicketFilterOptions) {
   if (options.priority && options.priority !== "ALL") {
     where.priority = options.priority;
   }
+  const dateFilter: any = {};
   if (options.monthYear && options.monthYear !== "ALL") {
-    where.ticketMonthYear = options.monthYear;
+    dateFilter.ticketMonthYear = options.monthYear;
   } else if (options.startDate || options.endDate) {
-    where.ticketDate = {};
+    dateFilter.ticketDate = {};
     if (options.startDate) {
-      where.ticketDate.gte = new Date(options.startDate);
+      dateFilter.ticketDate.gte = new Date(options.startDate);
     }
     if (options.endDate) {
-      where.ticketDate.lte = new Date(options.endDate);
+      dateFilter.ticketDate.lte = new Date(options.endDate);
     }
+  }
+
+  if (Object.keys(dateFilter).length > 0) {
+    where.AND = [
+      ...(where.AND || []),
+      {
+        OR: [
+          dateFilter,
+          { status: { notIn: ["RESOLVIDO", "CANCELADO"] } },
+          { technicianId: null }
+        ]
+      }
+    ];
   }
 
   if (options.query && options.query.trim().length > 0) {
@@ -200,29 +223,33 @@ export async function getTicketsPaginated(options: TicketFilterOptions) {
   let finalTotal = total;
 
   if (options.slaRisk) {
-    const nowTime = new Date().getTime();
-    const riskTickets = data.filter((t: any) => {
-      // Ignorar resolvidos e cancelados
-      if (t.status === "RESOLVIDO" || t.status === "CANCELADO") return false;
+    // Otimização: usar query SQL direta para filtrar tickets em risco de SLA
+    const riskTicketIds = await prisma.$queryRaw<Array<{id: string}>>
+      `SELECT t.id
+       FROM tickets t
+       LEFT JOIN services s ON t.service_id = s.id
+       LEFT JOIN ticket_pauses tp ON t.id = tp.ticket_id
+       WHERE t.deleted_at IS NULL
+         AND t.status NOT IN ('RESOLVIDO', 'CANCELADO')
+         AND (
+           COALESCE(s.sla_hours, 24) * 3600 * 1000 +
+           COALESCE(
+             SUM(
+               CASE
+                 WHEN tp.end_time IS NOT NULL
+                 THEN EXTRACT(EPOCH FROM (tp.end_time - tp.start_time)) * 1000
+                 ELSE EXTRACT(EPOCH FROM (NOW() - tp.start_time)) * 1000
+               END
+             ),
+             0
+           ) <=
+           EXTRACT(EPOCH FROM (NOW() - COALESCE(t.ticket_date, t.created_at))) * 1000 - 2 * 3600 * 1000
+         )
+       GROUP BY t.id`;
 
-      const dueTime = new Date(t.ticketDate || t.createdAt).getTime() + ((t.service?.slaHours || 24) * 60 * 60 * 1000);
-      let totalPauseMs = 0;
-      if (t.pauses && t.pauses.length > 0) {
-        t.pauses.forEach((p: any) => {
-          const start = new Date(p.startTime).getTime();
-          const end = p.endTime ? new Date(p.endTime).getTime() : nowTime;
-          totalPauseMs += (end - start);
-        });
-      }
-      const adjustedDueTime = dueTime + totalPauseMs;
-      const msLeft = adjustedDueTime - nowTime;
-      
-      // Se faltam 2 horas ou menos, ou se já estourou (msLeft <= 0)
-      return msLeft <= 2 * 60 * 60 * 1000;
-    });
-
-    finalTotal = riskTickets.length;
-    finalData = riskTickets.slice(skip, skip + limit);
+    const riskIds = riskTicketIds.map(r => r.id);
+    finalTotal = riskIds.length;
+    finalData = data.filter((t: any) => riskIds.includes(t.id)).slice(skip, skip + limit);
   }
 
   return {

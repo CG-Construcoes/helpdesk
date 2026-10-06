@@ -49,6 +49,14 @@ export function ExportPDFModal({
   const [mode, setMode] = useState<ReportMode>(currentMode);
   const [isLoading, setIsLoading] = useState(false);
 
+  React.useEffect(() => {
+    fetch('/api/settings').then(res => res.json()).then(data => {
+      if (data?.reportDefaultTheme) {
+        setTheme(data.reportDefaultTheme);
+      }
+    }).catch(() => {});
+  }, []);
+
   const handleConfirm = async () => {
     setIsLoading(true);
     try {

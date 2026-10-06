@@ -21,6 +21,11 @@ export interface CreateAuditLogParams {
 
 export async function logAuditEvent(params: CreateAuditLogParams) {
   try {
+    const settings = await prisma.settings.findFirst({ select: { auditLogEnabled: true } });
+    if (settings && settings.auditLogEnabled === false) {
+      return null;
+    }
+
     return await prisma.auditLog.create({
       data: {
         userId: params.userId || null,

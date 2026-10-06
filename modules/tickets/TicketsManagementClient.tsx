@@ -282,7 +282,7 @@ export default function TicketsManagementClient({
   function getTotalPauseMinutes(item: any): number {
     if (!item.pauses || item.pauses.length === 0) return 0;
     return item.pauses.reduce((acc: number, pause: any) => {
-      if (pause.duration) return acc + pause.duration;
+      if (pause.endTime) return acc + (pause.duration || 0);
       const sTime = new Date(pause.startTime);
       const eTime = new Date();
       return acc + calculateBusinessMinutes(sTime, eTime);
@@ -540,7 +540,8 @@ export default function TicketsManagementClient({
       className: "w-28 text-left",
       render: (item) => {
         let slaColor = "text-muted-foreground";
-        let isPaused = item.status === "AGUARDANDO_TERCEIROS";
+        const pausedStatuses = ["AGUARDANDO_USUARIO", "AGUARDANDO_TERCEIROS", "AGUARDANDO_PECA", "AGENDADO"];
+        let isPaused = pausedStatuses.includes(item.status);
         let tooltip = item.dueDate ? `Previsão original: ${new Date(item.dueDate).toLocaleString("pt-BR")}` : undefined;
         let isBreached = false;
 
@@ -571,7 +572,7 @@ export default function TicketsManagementClient({
             <div className="flex items-center gap-1.5">
               <Clock className={`w-4 h-4 opacity-70 ${isPaused && !isBreached ? 'text-amber-500' : slaColor}`} />
               <span className={`text-[12px] whitespace-nowrap ${isPaused && !isBreached ? 'text-amber-600 font-semibold' : slaColor}`}>
-                {getDynamicTimeBadge(item)}
+                {new Date(item.ticketDate).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })} - {getDynamicTimeBadge(item)}
               </span>
             </div>
             {isPaused && (

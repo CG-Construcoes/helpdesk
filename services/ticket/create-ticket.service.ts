@@ -3,7 +3,7 @@ import { OrigemType, PrioridadeType, StatusType } from "@prisma/client";
 import { createAuditLog } from "@/services/audit/audit.service";
 import { getOrCreateRequester } from "@/services/requester/requester.service";
 import { calculateTotalTimeMinutes, getTicketMonthYear } from "./ticket-utils";
-import { sendTicketCreatedEmail } from "@/services/email/email.service";
+import { sendTicketCreatedEmail, sendTicketResolvedEmail } from "@/services/email/email.service";
 
 export interface CreateTicketInput {
   requesterName: string;
@@ -25,6 +25,7 @@ export interface CreateTicketInput {
   totalTimeMinutes?: number | null;
   isArchived?: boolean;
   parentId?: string | null;
+  solutionText?: string;
 }
 
 /**
@@ -38,8 +39,11 @@ export async function createTicketInMonthWithRetry(dataWithoutNum: any, ticketDa
   while (attempt < maxAttempts) {
     try {
       return await prisma.$transaction(async (tx) => {
+        const settings = await tx.settings.findFirst({ select: { monthlyNumbering: true } });
+        const useMonthly = settings?.monthlyNumbering ?? true;
+
         const lastTicket = await tx.ticket.findFirst({
-          where: { ticketMonthYear },
+          where: useMonthly ? { ticketMonthYear } : undefined,
           orderBy: { ticketNumber: "desc" },
           select: { ticketNumber: true },
         });
@@ -88,9 +92,11 @@ export async function createTicket(
     email: input.requesterEmail,
   });
 
+  const settings = await prisma.settings.findFirst();
+
   const startTime = input.startTime ? new Date(input.startTime) : new Date();
   let endTime = input.endTime ? new Date(input.endTime) : null;
-  const status = input.status || "ABERTO";
+  const status = input.status || (settings?.defaultStatus as StatusType) || "ABERTO";
 
   if (status === "RESOLVIDO" && !endTime) {
     endTime = new Date();
@@ -100,16 +106,21 @@ export async function createTicket(
   const ticketDateObj = input.ticketDate ? new Date(input.ticketDate) : new Date();
 
   let dueDate: Date | null = null;
+  let slaToUse = settings?.defaultSlaHours || 24;
+
   if (input.serviceId) {
     const service = await prisma.service.findUnique({
       where: { id: input.serviceId },
       select: { slaHours: true }
     });
-    
     if (service?.slaHours) {
-      dueDate = new Date(ticketDateObj.getTime());
-      dueDate.setHours(dueDate.getHours() + service.slaHours);
+      slaToUse = service.slaHours;
     }
+  }
+
+  if (slaToUse) {
+    dueDate = new Date(ticketDateObj.getTime());
+    dueDate.setHours(dueDate.getHours() + slaToUse);
   }
 
   if (input.parentId) {
@@ -134,8 +145,8 @@ export async function createTicket(
       technicianId: input.technicianId || null,
       serviceId: input.serviceId || null,
       status,
-      origin: input.origin || "MANUAL",
-      priority: input.priority || "MEDIA",
+      origin: input.origin || (settings?.defaultOrigin as OrigemType) || "MANUAL",
+      priority: input.priority || (settings?.defaultPriority as PrioridadeType) || "MEDIA",
       ticketDate: ticketDateObj,
       dueDate,
       startTime,
@@ -180,11 +191,20 @@ export async function createTicket(
     ipAddress,
   });
 
-  // Dispara o e-mail de notificação de abertura de forma assíncrona (não bloqueante)
+  // Dispara o e-mail de notificação de forma assíncrona (não bloqueante)
   if (sendEmail && requester.email) {
-    sendTicketCreatedEmail(ticket, requester.email, requester.name).catch((err) => {
-      console.error("[EMAIL] Erro inesperado ao tentar notificar abertura do chamado:", err);
-    });
+    if (status === "RESOLVIDO") {
+      // Se foi criado já como resolvido (comum em chamados manuais retroativos)
+      const solutionText = input.solutionText || input.observations || "Chamado finalizado pela equipe de suporte.";
+      sendTicketResolvedEmail(ticket, requester.email, requester.name, solutionText).catch((err) => {
+        console.error("[EMAIL] Erro inesperado ao tentar notificar conclusão imediata do chamado:", err);
+      });
+    } else {
+      // Criação normal
+      sendTicketCreatedEmail(ticket, requester.email, requester.name).catch((err) => {
+        console.error("[EMAIL] Erro inesperado ao tentar notificar abertura do chamado:", err);
+      });
+    }
   }
 
   return ticket;

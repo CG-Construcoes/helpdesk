@@ -1,5 +1,6 @@
 export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
+import { unstable_cache } from "next/cache";
 import { getSession } from "@/lib/auth";
 import { hasPermission } from "@/services/rbac/rbac.service";
 import { createTicket } from "@/services/ticket/create-ticket.service";
@@ -8,7 +9,7 @@ import { OrigemType, PrioridadeType, StatusType } from "@prisma/client";
 
 export async function GET(request: NextRequest) {
   try {
-    const session = await getSession();
+    const session = await getSession(request);
     if (!session) {
       return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
     }
@@ -36,26 +37,60 @@ export async function GET(request: NextRequest) {
     const sortOrder = (searchParams.get("sortOrder") as "asc" | "desc") || "desc";
     const slaRisk = searchParams.get("slaRisk") === "true";
 
-    const result = await getTicketsPaginated({
-      page,
-      limit,
-      query,
-      status,
-      serviceId,
-      sectorId,
-      technicianId,
-      origin,
-      priority,
-      isArchived,
-      startDate,
-      endDate,
-      monthYear,
-      sortBy,
-      sortOrder,
-      slaRisk,
-      userId: session.id,
-      role: session.role,
-    });
+    // Cache apenas para listagens sem filtros específicos (cache curto de 5 segundos)
+    const shouldCache = !query && !startDate && !endDate && !monthYear && slaRisk === false;
+
+    let result;
+    if (shouldCache) {
+      const getCachedTickets = unstable_cache(
+        async (opts) => getTicketsPaginated(opts),
+        ["tickets-list"],
+        { revalidate: 5, tags: ["tickets"] }
+      );
+      result = await getCachedTickets({
+        page,
+        limit,
+        query,
+        status,
+        serviceId,
+        sectorId,
+        technicianId,
+        origin,
+        priority,
+        isArchived,
+        startDate,
+        endDate,
+        monthYear,
+        sortBy,
+        sortOrder,
+        slaRisk,
+        userId: session.id,
+        role: session.role,
+        userEmail: session.email,
+      });
+    } else {
+      result = await getTicketsPaginated({
+        page,
+        limit,
+        query,
+        status,
+        serviceId,
+        sectorId,
+        technicianId,
+        origin,
+        priority,
+        isArchived,
+        startDate,
+        endDate,
+        monthYear,
+        sortBy,
+        sortOrder,
+        slaRisk,
+        userId: session.id,
+        role: session.role,
+        userEmail: session.email,
+      });
+    }
 
     return NextResponse.json(result);
   } catch (error: any) {
@@ -69,7 +104,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const session = await getSession();
+    const session = await getSession(request);
     if (!session) {
       return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
     }
@@ -96,7 +131,9 @@ export async function POST(request: NextRequest) {
       startTime,
       endTime,
       observations,
+      sendEmail,
       parentId,
+      solutionText,
     } = body;
 
     if (!requesterName || !sectorId || !serviceId || !problem) {
@@ -125,10 +162,12 @@ export async function POST(request: NextRequest) {
         endTime,
         observations,
         parentId,
+        solutionText,
       },
       session.id,
       session.name,
-      ipAddress
+      ipAddress,
+      sendEmail !== undefined ? sendEmail : true
     );
 
     return NextResponse.json(ticket, { status: 201 });

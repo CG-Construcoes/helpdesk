@@ -136,7 +136,7 @@ export async function updateTicket(
 
   // Ticket Pause Logic (Aguardando Terceiros e Aguardando Usuário)
   if (existing.status !== updated.status) {
-    const isPausedStatus = (status: string) => status === "AGUARDANDO_TERCEIROS" || status === "AGUARDANDO_USUARIO";
+    const isPausedStatus = (status: string) => ["AGUARDANDO_TERCEIROS", "AGUARDANDO_USUARIO", "AGUARDANDO_PECA", "AGENDADO"].includes(status);
 
     if (isPausedStatus(updated.status)) {
       // Entrando em pausa

@@ -123,10 +123,14 @@ function getWorkingMinutesInDay(start: Date, end: Date, periods: {start: number,
 
   for (const period of periods) {
     const periodStart = new Date(start);
-    periodStart.setHours(period.start, 0, 0, 0);
+    // Explicitly calculate BRT offset to avoid server timezone issues (Vercel uses UTC)
+    // getUTCHours() - getHours() is the timezone offset in hours, but we want fixed BRT (-3)
+    // We'll just construct the string in BRT and parse it, or simpler:
+    // We set the UTC hours to period.start + 3 (BRT is UTC-3).
+    periodStart.setUTCHours(period.start + 3, 0, 0, 0);
     
     const periodEnd = new Date(start);
-    periodEnd.setHours(period.end, 0, 0, 0);
+    periodEnd.setUTCHours(period.end + 3, 0, 0, 0);
 
     let calcStart = sTime;
     let calcEnd = eTime;

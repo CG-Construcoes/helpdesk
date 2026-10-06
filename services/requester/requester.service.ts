@@ -301,11 +301,15 @@ export async function updateRequester(
 }
 
 export async function deleteRequester(id: string) {
+  const requester = await prisma.requester.findUnique({ where: { id } });
+  if (!requester) throw new Error("Solicitante não encontrado");
+
   const deleted = await prisma.requester.update({
     where: { id },
     data: {
       deletedAt: new Date(),
       isActive: false,
+      email: `${requester.email}.deleted.${Date.now()}`
     },
   });
 

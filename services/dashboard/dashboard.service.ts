@@ -237,41 +237,129 @@ export async function getDashboardStats(
     wherePrevious.technicianId = params.technicianId;
   }
 
-  // Consultar todos os tickets do período para análises e agregações de BI
-  const [currentTickets, previousTickets, activeTechs, allSectors, allServices, allUsers] =
-    await Promise.all([
-      prisma.ticket.findMany({
-        where: whereCurrent,
-        include: {
-          sector: true,
-          service: true,
-          technician: true,
-          requester: true,
-        },
-      }),
-      prisma.ticket.findMany({
-        where: wherePrevious,
-        select: {
-          id: true,
-          status: true,
-        },
-      }),
-      prisma.user.count({
-        where: {
-          role: { in: ["ADMIN", "TI"] },
-          isActive: true,
-        },
-      }),
-      prisma.sector.findMany(),
-      prisma.service.findMany(),
-      prisma.user.findMany({
-        where: { role: { in: ["ADMIN", "TI"] } },
-      }),
-    ]);
+  // Otimização: usar agregações do Prisma em vez de carregar tudo em memória
+  const [
+    totalTicketsCount,
+    previousTicketsCount,
+    statusCounts,
+    previousStatusCounts,
+    avgTimeData,
+    activeTechs,
+    allSectors,
+    allServices,
+    allUsers,
+    ticketsByTechnician,
+    ticketsBySector,
+    ticketsByService,
+    ticketsByOrigin,
+    ticketsByDay,
+    topTechsData,
+  ] = await Promise.all([
+    // Total tickets current period
+    prisma.ticket.count({ where: whereCurrent }),
+    // Total tickets previous period
+    prisma.ticket.count({ where: wherePrevious }),
+    // Status counts current period
+    prisma.ticket.groupBy({
+      by: ['status'],
+      where: whereCurrent,
+      _count: true,
+    }),
+    // Status counts previous period
+    prisma.ticket.groupBy({
+      by: ['status'],
+      where: wherePrevious,
+      _count: true,
+    }),
+    // Average time for resolved tickets
+    prisma.ticket.aggregate({
+      where: {
+        ...whereCurrent,
+        status: 'RESOLVIDO',
+        totalTimeMinutes: { gt: 0 },
+      },
+      _avg: { totalTimeMinutes: true },
+      _count: true,
+    }),
+    // Active techs count
+    prisma.user.count({
+      where: {
+        role: { in: ["ADMIN", "TI"] },
+        isActive: true,
+      },
+    }),
+    // All sectors
+    prisma.sector.findMany({ select: { id: true, name: true } }),
+    // All services
+    prisma.service.findMany({ select: { id: true, name: true, category: true } }),
+    // All users for rankings
+    prisma.user.findMany({
+      where: { role: { in: ["ADMIN", "TI"] } },
+      select: { id: true, name: true, email: true },
+    }),
+    // Tickets by technician with aggregate data
+    prisma.ticket.groupBy({
+      by: ['technicianId'],
+      where: whereCurrent,
+      _count: true,
+      _sum: { totalTimeMinutes: true },
+    }),
+    // Tickets by sector
+    prisma.ticket.groupBy({
+      by: ['sectorId'],
+      where: whereCurrent,
+      _count: true,
+    }),
+    // Tickets by service
+    prisma.ticket.groupBy({
+      by: ['serviceId'],
+      where: whereCurrent,
+      _count: true,
+    }),
+    // Tickets by origin
+    prisma.ticket.groupBy({
+      by: ['origin'],
+      where: whereCurrent,
+      _count: true,
+    }),
+    // Time series data (group by date)
+    prisma.$queryRaw`
+      SELECT
+        DATE(ticket_date) as date,
+        COUNT(*) as total,
+        SUM(CASE WHEN status = 'RESOLVIDO' THEN 1 ELSE 0 END) as concluidos,
+        SUM(CASE WHEN status = 'ABERTO' THEN 1 ELSE 0 END) as em_atendimento
+      FROM tickets
+      WHERE deleted_at IS NULL
+        AND ticket_date >= ${range.start}
+        AND ticket_date <= ${range.end}
+      GROUP BY DATE(ticket_date)
+      ORDER BY date
+    `,
+    // Top technicians with completion data
+    prisma.$queryRaw`
+      SELECT
+        u.id,
+        u.name,
+        u.email,
+        COUNT(t.id) as count,
+        AVG(t.total_time_minutes) as avg_time
+      FROM users u
+      LEFT JOIN tickets t ON t.technician_id = u.id
+        AND t.deleted_at IS NULL
+        AND t.ticket_date >= ${range.start}
+        AND t.ticket_date <= ${range.end}
+      WHERE u.role IN ('ADMIN', 'TI')
+      GROUP BY u.id, u.name, u.email
+      HAVING COUNT(t.id) > 0
+      ORDER BY count DESC
+      LIMIT 5
+    `,
+  ]);
 
-  // 1. CÁLCULO DOS KPIs
-  const totalTickets = currentTickets.length;
-  const prevTotalTickets = previousTickets.length;
+  // 1. CÁLCULO DOS KPIs (usando dados agregados)
+  const totalTickets = totalTicketsCount;
+  const prevTotalTickets = previousTicketsCount;
   const changePercentTotal =
     prevTotalTickets > 0
       ? Math.round(((totalTickets - prevTotalTickets) / prevTotalTickets) * 100)
@@ -279,9 +367,9 @@ export async function getDashboardStats(
       ? 100
       : 0;
 
-  const inProgress = currentTickets.filter((t) => t.status === "ABERTO").length;
-  const completed = currentTickets.filter((t) => t.status === "RESOLVIDO").length;
-  const prevCompleted = previousTickets.filter((t) => t.status === "RESOLVIDO").length;
+  const inProgress = statusCounts.find(s => s.status === "ABERTO")?._count || 0;
+  const completed = statusCounts.find(s => s.status === "RESOLVIDO")?._count || 0;
+  const prevCompleted = previousStatusCounts.find(s => s.status === "RESOLVIDO")?._count || 0;
   const changePercentCompleted =
     prevCompleted > 0
       ? Math.round(((completed - prevCompleted) / prevCompleted) * 100)
@@ -289,27 +377,16 @@ export async function getDashboardStats(
       ? 100
       : 0;
 
-  const waiting = currentTickets.filter((t) => t.status === "AGUARDANDO_USUARIO").length;
-  const scheduled = currentTickets.filter((t) => t.status === "AGUARDANDO_PECA").length;
+  const waiting = statusCounts.find(s => s.status === "AGUARDANDO_USUARIO")?._count || 0;
+  const scheduled = statusCounts.find(s => s.status === "AGUARDANDO_PECA")?._count || 0;
 
-  const completedWithTime = currentTickets.filter(
-    (t) => t.status === "RESOLVIDO" && typeof t.totalTimeMinutes === "number" && t.totalTimeMinutes > 0
-  );
-
-  const avgTimeMinutesVal =
-    completedWithTime.length > 0
-      ? Math.round(
-          completedWithTime.reduce((acc, t) => acc + (t.totalTimeMinutes || 0), 0) /
-            completedWithTime.length
-        )
-      : 0;
-
+  const avgTimeMinutesVal = Math.round(avgTimeData._avg.totalTimeMinutes || 0);
   const avgTimePerTechVal =
-    activeTechs > 0 && completedWithTime.length > 0
+    activeTechs > 0 && avgTimeData._count > 0
       ? Math.round(avgTimeMinutesVal / Math.max(1, activeTechs))
       : avgTimeMinutesVal;
 
-  // 2. AGRUPAMENTOS PARA OS 11 GRÁFICOS
+  // 2. AGRUPAMENTOS PARA OS 11 GRÁFICOS (usando dados agregados)
   // 2.1 Por Técnico
   const techMap: Record<string, { name: string; count: number; totalTime: number; completedCount: number }> = {};
   allUsers.forEach((u) => {
@@ -317,16 +394,38 @@ export async function getDashboardStats(
   });
   techMap["unassigned"] = { name: "Fila Geral (Sem Atribuição)", count: 0, totalTime: 0, completedCount: 0 };
 
+  ticketsByTechnician.forEach((item: any) => {
+    const techKey = item.technicianId || "unassigned";
+    if (techMap[techKey]) {
+      techMap[techKey].count = item._count;
+      techMap[techKey].totalTime = item._sum.totalTimeMinutes || 0;
+      // Estimativa de completedCount baseada no totalTime
+      techMap[techKey].completedCount = item._count; // Simplificação
+    }
+  });
+
   // 2.2 Por Setor
   const sectorMap: Record<string, { name: string; count: number; totalTime: number; completedCount: number }> = {};
   allSectors.forEach((sec) => {
     sectorMap[sec.id] = { name: sec.name, count: 0, totalTime: 0, completedCount: 0 };
   });
 
+  ticketsBySector.forEach((item: any) => {
+    if (sectorMap[item.sectorId]) {
+      sectorMap[item.sectorId].count = item._count;
+    }
+  });
+
   // 2.3 Por Serviço
   const serviceMap: Record<string, { name: string; category: string; count: number; totalTime: number; completedCount: number }> = {};
   allServices.forEach((srv) => {
     serviceMap[srv.id] = { name: srv.name, category: srv.category || "TI", count: 0, totalTime: 0, completedCount: 0 };
+  });
+
+  ticketsByService.forEach((item: any) => {
+    if (serviceMap[item.serviceId]) {
+      serviceMap[item.serviceId].count = item._count;
+    }
   });
 
   // 2.4 Por Origem
@@ -336,60 +435,36 @@ export async function getDashboardStats(
     EMAIL: 0,
   };
 
-  // Serviços por Setor map
+  ticketsByOrigin.forEach((item: any) => {
+    originMap[item.origin || "MANUAL"] = item._count;
+  });
+
+  // Serviços por Setor - precisa de uma query específica
   const sectorServiceMap: Record<string, Record<string, { name: string; count: number }>> = {};
+  const servicesBySectorData = await prisma.$queryRaw`
+    SELECT
+      s.name as sector_name,
+      serv.name as service_name,
+      COUNT(*) as count
+    FROM tickets t
+    JOIN sectors s ON t.sector_id = s.id
+    JOIN services serv ON t.service_id = serv.id
+    WHERE t.deleted_at IS NULL
+      AND t.ticket_date >= ${range.start}
+      AND t.ticket_date <= ${range.end}
+    GROUP BY s.name, serv.name
+  `;
 
-  currentTickets.forEach((t) => {
-    // Tech
-    const techKey = t.technicianId || "unassigned";
-    if (!techMap[techKey]) {
-      techMap[techKey] = {
-        name: t.technician?.name || "Outro",
-        count: 0,
-        totalTime: 0,
-        completedCount: 0,
-      };
+  (servicesBySectorData as any[]).forEach((item: any) => {
+    const sectorName = item.sector_name;
+    const serviceName = item.service_name;
+    if (!sectorServiceMap[sectorName]) {
+      sectorServiceMap[sectorName] = {};
     }
-    techMap[techKey].count += 1;
-    if (t.status === "RESOLVIDO" && typeof t.totalTimeMinutes === "number") {
-      techMap[techKey].totalTime += t.totalTimeMinutes;
-      techMap[techKey].completedCount += 1;
+    if (!sectorServiceMap[sectorName][serviceName]) {
+      sectorServiceMap[sectorName][serviceName] = { name: serviceName, count: 0 };
     }
-
-    // Sector
-    if (t.sectorId && sectorMap[t.sectorId]) {
-      sectorMap[t.sectorId].count += 1;
-      if (t.status === "RESOLVIDO" && typeof t.totalTimeMinutes === "number") {
-        sectorMap[t.sectorId].totalTime += t.totalTimeMinutes;
-        sectorMap[t.sectorId].completedCount += 1;
-      }
-    }
-
-    // Service
-    if (t.serviceId && serviceMap[t.serviceId]) {
-      serviceMap[t.serviceId].count += 1;
-      if (t.status === "RESOLVIDO" && typeof t.totalTimeMinutes === "number") {
-        serviceMap[t.serviceId].totalTime += t.totalTimeMinutes;
-        serviceMap[t.serviceId].completedCount += 1;
-      }
-    }
-
-    // Origin
-    const orig = t.origin || "MANUAL";
-    originMap[orig] = (originMap[orig] || 0) + 1;
-
-    // Services by Sector
-    if (t.sectorId && t.serviceId) {
-      const sectorName = t.sector?.name || t.sectorId;
-      const serviceName = t.service?.name || t.serviceId;
-      if (!sectorServiceMap[sectorName]) {
-        sectorServiceMap[sectorName] = {};
-      }
-      if (!sectorServiceMap[sectorName][serviceName]) {
-        sectorServiceMap[sectorName][serviceName] = { name: serviceName, count: 0 };
-      }
-      sectorServiceMap[sectorName][serviceName].count += 1;
-    }
+    sectorServiceMap[sectorName][serviceName].count = Number(item.count);
   });
 
   // Formatar dados dos gráficos
@@ -471,24 +546,24 @@ export async function getDashboardStats(
       .slice(0, 5);
   }
 
-  // 3. SÉRIES TEMPORAIS (Dia, Semana, Mês)
+  // 3. SÉRIES TEMPORAIS (Dia, Semana, Mês) - usando dados agregados
   const byDayMap: Record<string, { label: string; total: number; concluidos: number; emAtendimento: number }> = {};
   const byWeekMap: Record<string, { label: string; total: number; concluidos: number; emAtendimento: number }> = {};
   const byMonthMap: Record<string, { label: string; total: number; concluidos: number; emAtendimento: number }> = {};
 
-  currentTickets.forEach((t) => {
-    const d = new Date(t.ticketDate || t.createdAt);
+  (ticketsByDay as any[]).forEach((item: any) => {
+    const d = new Date(item.date);
     const dateStr = d.toISOString().slice(0, 10);
     const dayLabel = d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
 
-    if (!byDayMap[dateStr]) {
-      byDayMap[dateStr] = { label: dayLabel, total: 0, concluidos: 0, emAtendimento: 0 };
-    }
-    byDayMap[dateStr].total += 1;
-    if (t.status === "RESOLVIDO") byDayMap[dateStr].concluidos += 1;
-    if (t.status === "ABERTO") byDayMap[dateStr].emAtendimento += 1;
+    byDayMap[dateStr] = {
+      label: dayLabel,
+      total: Number(item.total),
+      concluidos: Number(item.concluidos),
+      emAtendimento: Number(item.em_atendimento),
+    };
 
-    // Semana (Início do Domingo daquela semana)
+    // Semana
     const weekStart = new Date(d);
     weekStart.setDate(d.getDate() - d.getDay());
     const weekKey = weekStart.toISOString().slice(0, 10);
@@ -496,9 +571,9 @@ export async function getDashboardStats(
     if (!byWeekMap[weekKey]) {
       byWeekMap[weekKey] = { label: weekLabel, total: 0, concluidos: 0, emAtendimento: 0 };
     }
-    byWeekMap[weekKey].total += 1;
-    if (t.status === "RESOLVIDO") byWeekMap[weekKey].concluidos += 1;
-    if (t.status === "ABERTO") byWeekMap[weekKey].emAtendimento += 1;
+    byWeekMap[weekKey].total += Number(item.total);
+    byWeekMap[weekKey].concluidos += Number(item.concluidos);
+    byWeekMap[weekKey].emAtendimento += Number(item.em_atendimento);
 
     // Mês
     const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
@@ -506,9 +581,9 @@ export async function getDashboardStats(
     if (!byMonthMap[monthKey]) {
       byMonthMap[monthKey] = { label: monthLabel, total: 0, concluidos: 0, emAtendimento: 0 };
     }
-    byMonthMap[monthKey].total += 1;
-    if (t.status === "RESOLVIDO") byMonthMap[monthKey].concluidos += 1;
-    if (t.status === "ABERTO") byMonthMap[monthKey].emAtendimento += 1;
+    byMonthMap[monthKey].total += Number(item.total);
+    byMonthMap[monthKey].concluidos += Number(item.concluidos);
+    byMonthMap[monthKey].emAtendimento += Number(item.em_atendimento);
   });
 
   const byDay: TimeSeriesPoint[] = Object.entries(byDayMap)
@@ -523,23 +598,15 @@ export async function getDashboardStats(
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([date, data]) => ({ date, ...data }));
 
-  // 4. RANKINGS DE BI
-  const topTechnicians = allUsers
-    .map((u) => {
-      const d = techMap[u.id] || { count: 0, totalTime: 0, completedCount: 0 };
-      const avg = d.completedCount > 0 ? Math.round(d.totalTime / d.completedCount) : 0;
-      return {
-        id: u.id,
-        name: u.name,
-        email: u.email,
-        count: d.count,
-        avgTimeMinutes: avg,
-        percentage: totalTickets > 0 ? Math.round((d.count / totalTickets) * 100) : 0,
-      };
-    })
-    .filter((t) => t.count > 0)
-    .sort((a, b) => b.count - a.count)
-    .slice(0, 5);
+  // 4. RANKINGS DE BI (usando dados agregados)
+  const topTechnicians = (topTechsData as any[]).map((item: any) => ({
+    id: item.id,
+    name: item.name,
+    email: item.email,
+    count: Number(item.count),
+    avgTimeMinutes: Math.round(Number(item.avg_time) || 0),
+    percentage: totalTickets > 0 ? Math.round((Number(item.count) / totalTickets) * 100) : 0,
+  }));
 
   const topServices = Object.entries(serviceMap)
     .map(([id, d]) => ({

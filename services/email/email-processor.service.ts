@@ -77,23 +77,70 @@ export async function checkAndProcessEmails() {
 
             // Tenta achar pelo inReplyTo ou references (caso tenha o ProcessedEmail com ticketId)
             if (!linkedTicket) {
-              const references = [
+              const rawRefs = [
                 parsedMail.inReplyTo,
                 ...(Array.isArray(parsedMail.references) ? parsedMail.references : [parsedMail.references])
               ].filter(Boolean) as string[];
+
+              const references: string[] = [];
+              for (const r of rawRefs) {
+                const matches = r.match(/<[^>]+>/g);
+                if (matches) {
+                  references.push(...matches);
+                } else {
+                  const parts = r.split(/\s+/).filter(Boolean);
+                  for (const p of parts) {
+                    if (p.startsWith('<') && p.endsWith('>')) {
+                      references.push(p);
+                    } else {
+                      references.push(`<${p}>`);
+                    }
+                  }
+                }
+              }
 
               if (references.length > 0) {
                 const pastEmail = await prisma.processedEmail.findFirst({
                   where: {
                     messageId: { in: references },
                     ticketId: { not: null }
-                  }
+                  },
+                  orderBy: { receivedAt: 'desc' }
                 });
                 if (pastEmail && pastEmail.ticketId) {
                   linkedTicket = await prisma.ticket.findUnique({
                     where: { id: pastEmail.ticketId },
                     include: { requester: true }
                   });
+                }
+              }
+            }
+
+            // Tenta achar pelo assunto base se for uma resposta
+            if (!linkedTicket) {
+              const cleanSubject = (s: string) => {
+                let cleaned = s;
+                let prev = '';
+                while (cleaned !== prev) {
+                  prev = cleaned;
+                  cleaned = cleaned.replace(/^(Re|Fwd|Enc|Res|En|Tr|Aw|Resolvido|Resolved|Fechado|Closed|Conclu[íi]do):\s*/ig, '').trim();
+                }
+                return cleaned;
+              };
+              const baseSubject = cleanSubject(subject);
+              
+              if (baseSubject && baseSubject !== subject && baseSubject.length > 5) {
+                const recentTicketBySubject = await prisma.ticket.findFirst({
+                  where: { 
+                    problem: { contains: baseSubject, mode: "insensitive" },
+                    status: { notIn: ['RESOLVIDO', 'CANCELADO'] }
+                  },
+                  orderBy: { createdAt: 'desc' },
+                  include: { requester: true }
+                });
+                if (recentTicketBySubject) {
+                  linkedTicket = recentTicketBySubject;
+                  console.log(`[EMAIL-INBOUND] Ticket #${linkedTicket.ticketNumber} recuperado via fallback de assunto: ${baseSubject}`);
                 }
               }
             }

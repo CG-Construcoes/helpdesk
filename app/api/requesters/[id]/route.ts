@@ -21,9 +21,9 @@ export async function PATCH(
   } catch (error: any) {
     console.error("[PATCH /api/requesters/[id]] Erro:", error);
     
-    if (error.code === "P2002") {
+    if (error.code === 'P2002') {
       return NextResponse.json(
-        { error: "Já existe um solicitante com este e-mail." },
+        { error: "Esse e-mail já está em uso por outro solicitante." },
         { status: 400 }
       );
     }
