@@ -131,6 +131,7 @@ export default function TicketsManagementClient({
   const [limit, setLimit] = useState(initialLimit || 10);
   const [totalPages, setTotalPages] = useState(1);
   const [totalItems, setTotalItems] = useState(initialTotal || 0);
+  const [absoluteTotalItems, setAbsoluteTotalItems] = useState(initialTotal || 0);
   const [openCount, setOpenCount] = useState(0);
   const [resolvedCount, setResolvedCount] = useState(0);
   const [waitingCount, setWaitingCount] = useState(0);
@@ -208,6 +209,7 @@ export default function TicketsManagementClient({
         setTickets(body.data || []);
         setTotalPages(body.meta?.totalPages || 1);
         setTotalItems(body.meta?.total || 0);
+        setAbsoluteTotalItems(body.meta?.absoluteTotal ?? body.meta?.total ?? 0);
         setOpenCount(body.meta?.openCount || 0);
         setResolvedCount(body.meta?.resolvedCount || 0);
         setWaitingCount(body.meta?.waitingCount || 0);
@@ -739,10 +741,10 @@ export default function TicketsManagementClient({
             <div className="p-2.5 bg-secondary rounded-xl">
               <FileText weight="bold" className="w-5 h-5 text-foreground" />
             </div>
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Total Listado</span>
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Total</span>
           </div>
           <div className="text-3xl font-display font-bold text-foreground mt-4 relative z-10">
-            {loading ? <Skeleton className="h-8 w-12" /> : totalItems}
+            {loading ? <Skeleton className="h-8 w-12" /> : absoluteTotalItems}
           </div>
         </div>
 
