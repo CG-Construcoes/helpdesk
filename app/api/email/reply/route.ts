@@ -126,13 +126,11 @@ export async function POST(request: NextRequest) {
         }
 
         // Salvar a ação pública (o e-mail enviado) como comentário, já que não temos um ProcessedEmail
-        const plainTextContent = content.replace(/<[^>]*>?/gm, '');
-        
         await tx.ticketComment.create({
           data: {
             ticketId,
             authorId: session.id || "admin",
-            content: plainTextContent.trim(),
+            content: content.trim(),
             isInternal: false,
           }
         });

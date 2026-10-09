@@ -74,7 +74,7 @@ export function TicketTimeline({ ticket }: { ticket: any }) {
           authorName: c.author?.name || "Sistema",
           authorInitials: (c.author?.name || "SI").substring(0, 2).toUpperCase(),
           content: c.content,
-          isHtml: false,
+          isHtml: c.content?.includes('<p>') || c.content?.includes('<br') || c.content?.includes('<div'),
         });
       });
     }

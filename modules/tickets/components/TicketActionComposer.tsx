@@ -177,7 +177,7 @@ export function TicketActionComposer({
           const res = await fetch(`/api/tickets/${ticket.id}/comments`, {
             method: "POST",
             body: JSON.stringify({ 
-              text: contentText, 
+              text: finalHtml, 
               isInternal: false,
               nextStatus: nextStatus !== "KEEP" && nextStatus !== ticket.status ? nextStatus : undefined,
               solutionHtml: (nextStatus === "RESOLVIDO" && solutionText.trim().length > 0) ? solutionText.replace(/\n/g, '<br/>') : undefined,
@@ -192,7 +192,7 @@ export function TicketActionComposer({
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ 
-            text: contentText, 
+            text: contentHtml, 
             isInternal: true,
             nextStatus: nextStatus !== "KEEP" && nextStatus !== ticket.status ? nextStatus : undefined
           }),
