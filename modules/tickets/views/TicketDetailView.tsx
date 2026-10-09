@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import DOMPurify from "isomorphic-dompurify";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -163,6 +164,20 @@ export function TicketDetailView({ ticketId }: { ticketId: string }) {
                 em {new Date(ticket.ticketDate || ticket.createdAt).toLocaleString("pt-BR")}
               </div>
             </div>
+
+            {/* DESCRIPTION PANEL */}
+            {ticket.description && (
+              <div className="rounded-xl border bg-card p-5 shadow-sm text-sm text-foreground/90 leading-relaxed overflow-x-auto">
+                {/<[a-z][\s\S]*>/i.test(ticket.description) ? (
+                  <div 
+                    className="email-body-content max-w-full"
+                    dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(ticket.description, { ADD_DATA_URI_TAGS: ['img'] }) }}
+                  />
+                ) : (
+                  <div className="whitespace-pre-wrap">{ticket.description}</div>
+                )}
+              </div>
+            )}
 
             {/* SOLUTION PANEL */}
             {ticket.solution && (
