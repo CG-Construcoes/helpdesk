@@ -37,16 +37,20 @@ export async function checkAndProcessEmails() {
           
           const messageId = parsedMail.messageId || `uid-${message.uid}`;
           
-          // Verifica duplicidade no banco
-          const existing = await prisma.processedEmail.findUnique({
-            where: { messageId }
-          });
-
-          if (existing) {
-            console.log(`[EMAIL-INBOUND] E-mail ${messageId} já processado. Ignorando.`);
-            // Marca como visto no IMAP apenas para segurança
-            await client.messageFlagsAdd({ uid: message.uid }, ['\\Seen'], { uid: true });
-            continue;
+          // Verifica duplicidade no banco usando um insert otimista para evitar race conditions
+          try {
+            await prisma.processedEmail.create({
+              data: { messageId, status: 'PROCESSING' }
+            });
+          } catch (createErr: any) {
+            // Se falhar por unique constraint (P2002), outro processo pegou ou já foi processado
+            if (createErr.code === 'P2002') {
+              console.log(`[EMAIL-INBOUND] E-mail ${messageId} já processado ou em processamento. Ignorando.`);
+              // Marca como visto no IMAP apenas para segurança
+              await client.messageFlagsAdd({ uid: message.uid }, ['\\Seen'], { uid: true });
+              continue;
+            }
+            throw createErr;
           }
 
           console.log(`[EMAIL-INBOUND] Processando Message-ID ${messageId}`);
@@ -210,9 +214,9 @@ export async function checkAndProcessEmails() {
             }
 
             // Registra sucesso e salva os corpos
-            await prisma.processedEmail.create({
+            await prisma.processedEmail.update({
+              where: { messageId },
               data: {
-                messageId,
                 from: fromAddress,
                 subject,
                 receivedAt: parsedMail.date || new Date(),
@@ -234,9 +238,9 @@ export async function checkAndProcessEmails() {
             // Registra o erro no banco para não tentar repetidamente sem controle, 
             // ou podemos optar por não registrar para tentar de novo.
             // Optamos por registrar como ERROR para não bloquear outros e-mails.
-            await prisma.processedEmail.create({
+            await prisma.processedEmail.update({
+              where: { messageId },
               data: {
-                messageId,
                 from: parsedMail.from?.value[0]?.address,
                 subject: parsedMail.subject,
                 status: 'ERROR',

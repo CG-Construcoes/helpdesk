@@ -12,6 +12,21 @@ export async function GET(
   try {
     const { id } = await params;
 
+    const session = await require("@/lib/auth").getSession(req);
+    if (!session) {
+      return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
+    }
+
+    if (session.role === "SOLICITANTE") {
+      const ticket = await prisma.ticket.findUnique({
+        where: { id },
+        include: { requester: true }
+      });
+      if (!ticket || ticket.requester.email !== session.email) {
+        return NextResponse.json({ error: "Acesso negado." }, { status: 403 });
+      }
+    }
+
     const attachments = await prisma.ticketAttachment.findMany({
       where: { ticketId: id },
       orderBy: { createdAt: "desc" },
@@ -30,6 +45,21 @@ export async function POST(
 ) {
   try {
     const { id } = await params;
+
+    const session = await require("@/lib/auth").getSession(req);
+    if (!session) {
+      return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
+    }
+
+    if (session.role === "SOLICITANTE") {
+      const ticket = await prisma.ticket.findUnique({
+        where: { id },
+        include: { requester: true }
+      });
+      if (!ticket || ticket.requester.email !== session.email) {
+        return NextResponse.json({ error: "Acesso negado." }, { status: 403 });
+      }
+    }
     const formData = await req.formData();
     const file = formData.get("file") as File;
     const uploadedById = formData.get("uploadedById") as string | null;

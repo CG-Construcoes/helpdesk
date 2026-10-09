@@ -2,6 +2,10 @@ import { SignJWT, jwtVerify } from "jose";
 import { cookies } from "next/headers";
 import { UserSession } from "@/types/rbac.types";
 
+if (!process.env.JWT_SECRET && process.env.NODE_ENV === "production") {
+  throw new Error("CRITICAL SECURITY ERROR: JWT_SECRET environment variable is not set in production.");
+}
+
 const SECRET_KEY = new TextEncoder().encode(
   process.env.JWT_SECRET || "helpdesk_pro_secret_key_cg_construcoes_2026_super_secure"
 );

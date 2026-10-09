@@ -10,7 +10,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = await getSession();
+    const session = await getSession(request);
     if (!session) {
       return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
     }
@@ -21,6 +21,17 @@ export async function GET(
     }
 
     const { id } = await params;
+
+    if (session.role === "SOLICITANTE") {
+      const ticket = await prisma.ticket.findUnique({
+        where: { id },
+        include: { requester: true }
+      });
+      if (!ticket || ticket.requester.email !== session.email) {
+        return NextResponse.json({ error: "Acesso negado: Este chamado pertence a outro usuário." }, { status: 403 });
+      }
+    }
+
     const comments = await prisma.ticketComment.findMany({
       where: { ticketId: id },
       orderBy: { createdAt: "desc" },
@@ -44,7 +55,7 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = await getSession();
+    const session = await getSession(request);
     if (!session) {
       return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
     }
@@ -55,6 +66,17 @@ export async function POST(
     }
 
     const { id } = await params;
+
+    if (session.role === "SOLICITANTE") {
+      const ticket = await prisma.ticket.findUnique({
+        where: { id },
+        include: { requester: true }
+      });
+      if (!ticket || ticket.requester.email !== session.email) {
+        return NextResponse.json({ error: "Acesso negado: Este chamado pertence a outro usuário." }, { status: 403 });
+      }
+    }
+
     const body = await request.json();
     const { text, isInternal, replyAll, nextStatus, solutionHtml, signatureHtml } = body;
 
