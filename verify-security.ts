@@ -89,7 +89,7 @@ async function runTests() {
   const originalSecret = process.env.JWT_SECRET;
   
   try {
-    process.env.NODE_ENV = "production";
+    (process.env as any).NODE_ENV = "production";
     delete process.env.JWT_SECRET;
     
     // Isso deve lançar erro
@@ -108,7 +108,7 @@ async function runTests() {
     }
   } finally {
     // Restaurar envs
-    process.env.NODE_ENV = originalEnv;
+    (process.env as any).NODE_ENV = originalEnv;
     if (originalSecret) process.env.JWT_SECRET = originalSecret;
   }
 

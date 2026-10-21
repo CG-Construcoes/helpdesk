@@ -41,22 +41,35 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Cache de 30 segundos para reduzir carga no banco
-    const getCachedStats = unstable_cache(
-      async (params) => getDashboardStats(params),
-      ["dashboard-stats"],
-      { revalidate: 30, tags: ["dashboard"] }
-    );
-
-    const stats = await getCachedStats({
-      period: monthYear ? "MONTHLY_SPECIFIC" : (periodParam || "LAST_30_DAYS"),
+    const filterParams = {
+      period: monthYear ? ("MONTHLY_SPECIFIC" as const) : (periodParam || "LAST_30_DAYS"),
       startDate,
       endDate,
       monthYear,
       sectorId: sectorId !== "ALL" ? sectorId : undefined,
       serviceId: serviceId !== "ALL" ? serviceId : undefined,
       technicianId: technicianId !== "ALL" ? technicianId : undefined,
-    });
+    };
+
+    const cacheKey = [
+      "dashboard-stats",
+      filterParams.period || "",
+      filterParams.monthYear || "",
+      filterParams.startDate || "",
+      filterParams.endDate || "",
+      filterParams.sectorId || "",
+      filterParams.serviceId || "",
+      filterParams.technicianId || "",
+    ];
+
+    // Cache de 30 segundos para reduzir carga no banco
+    const getCachedStats = unstable_cache(
+      async () => getDashboardStats(filterParams),
+      cacheKey,
+      { revalidate: 30, tags: ["dashboard"] }
+    );
+
+    const stats = await getCachedStats();
 
     return NextResponse.json(stats, { status: 200 });
   } catch (error: any) {

@@ -89,7 +89,14 @@ export async function getExecutiveReportData(filters: ExecutiveReportFilters) {
   // Filtros dinâmicos
   const whereTickets: Prisma.TicketWhereInput = {
     deletedAt: null,
-    ticketDate: { gte: range.start, lte: range.end },
+    ...(filters.monthYear
+      ? {
+          OR: [
+            { ticketMonthYear: filters.monthYear },
+            { ticketDate: { gte: range.start, lte: range.end } },
+          ],
+        }
+      : { ticketDate: { gte: range.start, lte: range.end } }),
   };
 
   if (filters.technicianId) whereTickets.technicianId = filters.technicianId;

@@ -237,6 +237,26 @@ export async function getDashboardStats(
     wherePrevious.technicianId = params.technicianId;
   }
 
+  // Monta condições SQL correspondentes para queries raw (respeitando camelCase do PostgreSQL)
+  const rawTicketConditions = [Prisma.sql`t."deletedAt" IS NULL`];
+  if (params.monthYear) {
+    rawTicketConditions.push(Prisma.sql`t."ticketMonthYear" = ${params.monthYear}`);
+  } else {
+    rawTicketConditions.push(
+      Prisma.sql`t."ticketDate" >= ${range.start} AND t."ticketDate" <= ${range.end}`
+    );
+  }
+  if (params.sectorId && params.sectorId !== "ALL") {
+    rawTicketConditions.push(Prisma.sql`t."sectorId" = ${params.sectorId}`);
+  }
+  if (params.serviceId && params.serviceId !== "ALL") {
+    rawTicketConditions.push(Prisma.sql`t."serviceId" = ${params.serviceId}`);
+  }
+  if (params.technicianId && params.technicianId !== "ALL") {
+    rawTicketConditions.push(Prisma.sql`t."technicianId" = ${params.technicianId}`);
+  }
+  const rawWhereTickets = Prisma.join(rawTicketConditions, " AND ");
+
   // Otimização: usar agregações do Prisma em vez de carregar tudo em memória
   const [
     totalTicketsCount,
@@ -325,15 +345,13 @@ export async function getDashboardStats(
     // Time series data (group by date)
     prisma.$queryRaw`
       SELECT
-        DATE(ticket_date) as date,
+        DATE(t."ticketDate") as date,
         COUNT(*) as total,
-        SUM(CASE WHEN status = 'RESOLVIDO' THEN 1 ELSE 0 END) as concluidos,
-        SUM(CASE WHEN status = 'ABERTO' THEN 1 ELSE 0 END) as em_atendimento
-      FROM tickets
-      WHERE deleted_at IS NULL
-        AND ticket_date >= ${range.start}
-        AND ticket_date <= ${range.end}
-      GROUP BY DATE(ticket_date)
+        SUM(CASE WHEN t.status = 'RESOLVIDO' THEN 1 ELSE 0 END) as concluidos,
+        SUM(CASE WHEN t.status = 'ABERTO' THEN 1 ELSE 0 END) as em_atendimento
+      FROM tickets t
+      WHERE ${rawWhereTickets}
+      GROUP BY DATE(t."ticketDate")
       ORDER BY date
     `,
     // Top technicians with completion data
@@ -343,12 +361,9 @@ export async function getDashboardStats(
         u.name,
         u.email,
         COUNT(t.id) as count,
-        AVG(t.total_time_minutes) as avg_time
+        AVG(t."totalTimeMinutes") as avg_time
       FROM users u
-      LEFT JOIN tickets t ON t.technician_id = u.id
-        AND t.deleted_at IS NULL
-        AND t.ticket_date >= ${range.start}
-        AND t.ticket_date <= ${range.end}
+      LEFT JOIN tickets t ON t."technicianId" = u.id AND ${rawWhereTickets}
       WHERE u.role IN ('ADMIN', 'TI')
       GROUP BY u.id, u.name, u.email
       HAVING COUNT(t.id) > 0
@@ -447,11 +462,9 @@ export async function getDashboardStats(
       serv.name as service_name,
       COUNT(*) as count
     FROM tickets t
-    JOIN sectors s ON t.sector_id = s.id
-    JOIN services serv ON t.service_id = serv.id
-    WHERE t.deleted_at IS NULL
-      AND t.ticket_date >= ${range.start}
-      AND t.ticket_date <= ${range.end}
+    JOIN sectors s ON t."sectorId" = s.id
+    JOIN services serv ON t."serviceId" = serv.id
+    WHERE ${rawWhereTickets}
     GROUP BY s.name, serv.name
   `;
 
