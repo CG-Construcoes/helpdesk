@@ -41,7 +41,14 @@ export async function POST(request: NextRequest) {
     });
 
     // Enviar e-mail
-    const resetUrl = `https://chamados.cgconstrucoes.com/reset-password?token=${token}`;
+    // Prioriza APP_URL; senão, usa a origem da própria requisição (respeitando proxy reverso)
+    const forwardedHost = request.headers.get("x-forwarded-host");
+    const forwardedProto = request.headers.get("x-forwarded-proto") ?? "https";
+    const baseUrl = (
+      process.env.APP_URL ||
+      (forwardedHost ? `${forwardedProto}://${forwardedHost}` : request.nextUrl.origin)
+    ).replace(/\/+$/, "");
+    const resetUrl = `${baseUrl}/reset-password?token=${token}`;
     const htmlContent = `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #333;">
         <h2 style="color: #0f172a;">Recuperação de Senha</h2>
